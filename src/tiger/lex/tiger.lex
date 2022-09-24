@@ -74,6 +74,7 @@ invisible [\000-\040]
                             adjustStr(); 
                             comment_level_++; 
                         }
+    <<EOF>>             {adjust(); errormsg_->Error(errormsg_->tok_pos_, "unclosed comment");}
 }
 
 /* String */
@@ -98,7 +99,7 @@ invisible [\000-\040]
               begin(StartCondition__::INITIAL); 
               return Parser::STRING;
     }
-
+    <<EOF>>             {adjust(); errormsg_->Error(errormsg_->tok_pos_, "unclosed string");}
     .                   {adjustStr(); string_buf_ += matched(); }
 }
 
