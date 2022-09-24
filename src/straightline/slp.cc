@@ -1,5 +1,4 @@
 #include "straightline/slp.h"
-#include "slp.h"
 
 #include <iostream>
 

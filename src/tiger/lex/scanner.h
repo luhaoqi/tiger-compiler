@@ -68,10 +68,12 @@ private:
 inline int Scanner::lex() { return lex__(); }
 
 inline void Scanner::preCode() {
+  // std::cout << "[preCode: " << matched() << "]\n";
   // Optionally replace by your own code
 }
 
 inline void Scanner::postCode(PostEnum__ type) {
+  // std::cout << "[postCode: " << matched() << "]\n";
   // Optionally replace by your own code
 }
 
