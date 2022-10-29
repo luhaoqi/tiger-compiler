@@ -421,6 +421,79 @@ type::Ty *VoidExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // 双重循环是因为重名不能跟这个list外面的判断
+  const auto &funList = this->functions_->GetList();
+  // 第一次扫描
+  for (auto now = funList.begin(); now != funList.end(); now++) {
+    bool flag = true;
+    // 从now后面开始找有没有一样的
+    for (auto nxt = std::next(now, 1); nxt != funList.end(); nxt++) {
+      // 这里直接比较Symbol
+      if ((*now)->name_ == (*nxt)->name_) {
+        // 重名 只查一处
+        errormsg->Error(pos_, "two functions have the same name");
+        flag = false;
+        break;
+      }
+    }
+    // 没有重名
+    if (flag) {
+      FunDec *fun = *now;
+      type::TyList *formalTyList =
+          fun->params_->MakeFormalTyList(tenv, errormsg);
+      type::Ty *resultTy;
+      if (fun->result_) {
+        // 查找返回值类型
+        resultTy = tenv->Look(fun->result_);
+      } else {
+        // 是过程不是函数
+        resultTy = type::VoidTy::Instance();
+      }
+      venv->Enter(fun->name_, new env::FunEntry(formalTyList, resultTy));
+    } else {
+      // TODO:其实可以把所有没有重名的加进来
+      // 但毕竟测试集合的输出不太一样 就先这样了
+      break;
+    }
+  }
+  // 二次扫描
+  // 详细思路看TypeDec
+  for (const auto &fun : funList) {
+    // 计算formalTyList
+    type::TyList *formalTyList = fun->params_->MakeFormalTyList(tenv, errormsg);
+    // 开始funtion的作用域 两个都要记录
+    // 函数里面的局部变量 类型声明都只在函数作用域生效
+    venv->BeginScope();
+    tenv->BeginScope();
+
+    // 执行body前把funDec中的临时变量加进去
+    const auto &fieldList = fun->params_->GetList();
+    const auto &tyList = formalTyList->GetList();
+
+    auto it1 = fieldList.begin();
+    auto it2 = tyList.begin();
+
+    for (; it1 != fieldList.end(); ++it1, ++it2) {
+      venv->Enter((*it1)->name_, new env::VarEntry(*it2));
+    }
+
+    // 执行body
+    type::Ty *ty = fun->body_->SemAnalyze(venv, tenv, labelcount, errormsg);
+    // 从venv中找出预先填入的函数声明（不是为了补充定义）
+    // 需要知道的事函数事先扫一遍是为了全部声明好执行body
+    // 这里检查返回类型是否匹配
+    env::EnvEntry *entry = venv->Look(fun->name_);
+    if (typeid(*entry) != typeid(env::FunEntry) ||
+        ty != dynamic_cast<env::FunEntry *>(entry)->result_->ActualTy()) {
+      errormsg->Error(pos_, "procedure returns value");
+    }
+
+    // 结束
+    venv->EndScope();
+    tenv->EndScope();
+  }
+
+  // 函数没有类似typedec的死循环
 }
 
 void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
@@ -463,8 +536,8 @@ void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
     bool flag = true;
     // 从now后面开始找有没有一样的
     for (auto nxt = std::next(now, 1); nxt != nameTyList.end(); nxt++) {
-      // 这里比较字符串可能有性能开销 但是symbol还有next
-      if ((*now)->name_->Name() == (*nxt)->name_->Name()) {
+      // 这里直接比较symbol
+      if ((*now)->name_ == (*nxt)->name_) {
         // 重名 只查一处
         errormsg->Error(pos_, "two types have the same name");
         flag = false;
