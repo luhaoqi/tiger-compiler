@@ -8,8 +8,10 @@ namespace absyn {
 // #define DEFULT_ERROR_TYPR type::IntTy::Instance()
 type::Ty *DEFULT_ERROR_TYPR = type::IntTy::Instance();
 
+// 遵循原则：
 // 所有的SemAnalyze返回的Ty都ActualTy()
-
+// 尽可能多找错
+// 以type.h中的ActualTy()方式 不同地方创建的RecordTy各不相同
 void AbsynTree::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                            err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
@@ -76,41 +78,166 @@ type::Ty *SubscriptVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 type::Ty *VarExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // 这里不用管var到底是Simple、Field还是Subscript
+  // 因为Var的SemAnalyze是一个纯虚函数，会找到对应的子类
+  return var_->SemAnalyze(venv, tenv, labelcount, errormsg);
 }
 
 type::Ty *NilExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::NilTy::Instance();
 }
 
 type::Ty *IntExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::IntTy::Instance();
 }
 
 type::Ty *StringExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::StringTy::Instance();
 }
 
 type::Ty *CallExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                               int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  env::EnvEntry *entry = venv->Look(func_);
+  if (entry && typeid(*entry) == typeid(env::FunEntry)) {
+    // 找到该函数的定义
+    env::FunEntry *fun = dynamic_cast<env::FunEntry *>(entry);
+    // const & 减少开销
+    const auto &formals = fun->formals_->GetList();
+    const auto &res = fun->result_;
+    bool flag = true;  // 标记是否有错误
+    const auto &args = args_->GetList();
+    std::list<type::Ty *> args_ty;
+    // 先把表达式都算出来放到args_ty容器中
+    for (const auto &x : args) {
+      args_ty.push_back(x->SemAnalyze(venv, tenv, labelcount, errormsg));
+    }
+    // 遍历formals检查类型是否匹配
+    auto it1 = formals.begin();
+    auto it2 = args_ty.begin();
+    for (; it1 != formals.end() && it2 != args_ty.end(); it1++, it2++) {
+      if ((*it1)->ActualTy() != (*it2)->ActualTy()) {
+        errormsg->Error(pos_, "para type mismatch");
+        flag = false;
+      }
+    }
+    if (it1 != formals.end()) {
+      errormsg->Error(pos_, "too few params in function %s",
+                      func_->Name().data());
+      flag = false;
+    }
+
+    if (it2 != args_ty.end()) {
+      errormsg->Error(pos_, "too many params in function %s",
+                      func_->Name().data());
+      flag = false;
+    }
+    // 没有任何错误，返回函数返回值类型
+    if (flag) return res->ActualTy();
+  } else {
+    // ERROR! not found!
+    errormsg->Error(pos_, "undefined function %s", func_->Name().data());
+  }
+  // 有问题默认返回ERROR_TYPE(int)
+  return DEFULT_ERROR_TYPR;
 }
 
 type::Ty *OpExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                             int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  type::Ty *left_ty =
+      left_->SemAnalyze(venv, tenv, labelcount, errormsg)->ActualTy();
+  type::Ty *right_ty =
+      right_->SemAnalyze(venv, tenv, labelcount, errormsg)->ActualTy();
+  switch (oper_) {
+    case PLUS_OP:
+    case MINUS_OP:
+    case DIVIDE_OP:
+    case TIMES_OP:
+    case AND_OP:
+    case OR_OP:
+      // 加减乘除 与 & | 操作左右操作数必须是int
+      if (typeid(*left_ty) != typeid(type::IntTy)) {
+        errormsg->Error(left_->pos_, "integer required");
+      }
+      if (typeid(*right_ty) != typeid(type::IntTy)) {
+        errormsg->Error(right_->pos_, "integer required");
+      }
+      return type::IntTy::Instance();
+      break;
+    case ABSYN_OPER_COUNT:
+      assert(false);
+      break;
+    default:
+      // 否则就是比较操作，只需要类型相等
+      if (!left_ty->IsSameType(right_ty)) {
+        errormsg->Error(pos_, "same type required");
+        return type::IntTy::Instance();
+      }
+      break;
+  }
+  return DEFULT_ERROR_TYPR;
 }
 
 type::Ty *RecordExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  type::Ty *ty = tenv->Look(typ_);
+  if (!ty) {
+    // Check type existence
+    errormsg->Error(pos_, "undefined type %s", typ_->Name().data());
+  } else {
+    ty = ty->ActualTy();
+    if (typeid(*ty) != typeid(type::RecordTy)) {
+      // Check if is a record
+      errormsg->Error(pos_, std::string("not a record type"));
+      return ty;
+    } else {
+      auto args = fields_->GetList();  // Given Efields
+      auto formals = dynamic_cast<type::RecordTy *>(ty)
+                         ->fields_->GetList();  // declared Fields
+      // check the two list
+      auto it1 = args.begin();
+      auto it2 = formals.begin();
+      for (; it1 != args.end() && it2 != formals.end(); it1++, it2++) {
+        // 解析表达式exp得到类型ty
+        type::Ty *ty =
+            (*it1)->exp_->SemAnalyze(venv, tenv, labelcount, errormsg);
+        // 比较两者的name 附录要求按顺序一一对应
+        if ((*it1)->name_ != (*it2)->name_)
+          errormsg->Error((*it1)->exp_->pos_, "field %s doesn't exist",
+                          (*it1)->name_->Name().data());
+        // 比较两者类型
+        if (!ty->IsSameType((*it2)->ty_))
+          errormsg->Error((*it1)->exp_->pos_, "unmatched assign exp");
+      }
+      // 比较数量
+      if (it1 != args.end()) errormsg->Error(pos_, "too many Efields");
+      if (it2 != formals.end()) errormsg->Error(pos_, "too few Efields");
+      // 即使参数都对不上，还是当做对上名字的RecordTy返回
+      return dynamic_cast<type::RecordTy *>(ty);
+    }
+  }
+  return DEFULT_ERROR_TYPR;
 }
 
 type::Ty *SeqExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  const auto &expList = seq_->GetList();
+
+  type::Ty *ty = type::VoidTy::Instance();
+  for (const auto &x : expList) {
+    ty = x->SemAnalyze(venv, tenv, labelcount, errormsg);
+  }
+
+  return ty;
 }
 
 type::Ty *AssignExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
