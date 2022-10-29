@@ -243,11 +243,51 @@ type::Ty *SeqExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 type::Ty *AssignExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  type::Ty *var_ty = var_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  type::Ty *exp_ty = exp_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  // for中的变量不能赋值
+  if (typeid(*var_) == typeid(SimpleVar)) {
+    SimpleVar *svar = static_cast<SimpleVar *>(var_);
+    // 转成simplevar后去查找entry
+    env::EnvEntry *entry = venv->Look(svar->sym_);
+    if (entry->readonly_) {
+      errormsg->Error(svar->pos_, "loop variable can't be assigned");
+    }
+  }
+  // 比较左右类型
+  if (!var_ty->IsSameType(exp_ty)) {
+    errormsg->Error(pos_, "unmatched assign exp");
+  }
+  // 无值表达式
+  return type::VoidTy::Instance();
 }
 
 type::Ty *IfExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                             int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // 取出test,then,else的type
+  type::Ty *test_ty = test_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  type::Ty *then_ty = then_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  type::Ty *else_ty = nullptr;
+
+  if (typeid(*test_ty) != typeid(type::IntTy)) {
+    errormsg->Error(test_->pos_, "test of IfExp must be integer");
+  }
+  if (!elsee_) {
+    // if-then
+    if (typeid(*then_ty) != typeid(type::VoidTy)) {
+      errormsg->Error(then_->pos_, "if-then exp's body must produce no value");
+    }
+    return type::VoidTy::Instance();
+  } else {
+    // if-then-else
+    else_ty = elsee_->SemAnalyze(venv, tenv, labelcount, errormsg);
+    if (!then_ty->IsSameType(else_ty)) {
+      errormsg->Error(then_->pos_, "then exp and else exp type mismatch");
+    }
+    // 猜测返回的是then后面的类型
+    return then_ty->ActualTy();
+  }
 }
 
 type::Ty *WhileExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
