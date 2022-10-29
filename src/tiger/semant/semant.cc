@@ -424,6 +424,32 @@ void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
                         err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // 不管哪种情况都有init
+  type::Ty init_ty = init_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  // 判断是否声明类型
+  if (typ_ == nullptr) {
+    // var a:=1
+    // 只有record能被赋值为nil
+    if (init_ty->IsSameType(type::NilTy::Instance()) &&
+        typeid(*(init_ty->ActualTy())) != typeid(type::RecordTy)) {
+      errormsg->Error(pos_, "init should not be nil without type specified");
+    } else {
+      // 正确的话压入环境venv
+      venv->Enter(this->var_, new env::VarEntry(init_ty));
+    }
+  } else {
+    // var a:int:=1
+    type::Ty ty = tenv->Look(typ_);
+    if (!ty) {
+      errormsg->Error(pos_, "undefined type of %s", this->typ_->Name().data());
+    } else {
+      if (!ty->IsSameType(init_ty)) {
+        errormsg->Error(pos_, "type mismatch");
+      }
+      // 正确的声明加入环境
+      venv->Enter(this->var_, new env::VarEntry(ty));
+    }
+  }
 }
 
 void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
