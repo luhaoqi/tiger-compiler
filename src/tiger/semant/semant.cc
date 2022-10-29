@@ -1,5 +1,7 @@
 #include "tiger/semant/semant.h"
 
+#include <set>
+
 #include "tiger/absyn/absyn.h"
 
 namespace absyn {
@@ -425,7 +427,7 @@ void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
                         err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
   // 不管哪种情况都有init
-  type::Ty init_ty = init_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  type::Ty *init_ty = init_->SemAnalyze(venv, tenv, labelcount, errormsg);
   // 判断是否声明类型
   if (typ_ == nullptr) {
     // var a:=1
@@ -439,7 +441,7 @@ void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
     }
   } else {
     // var a:int:=1
-    type::Ty ty = tenv->Look(typ_);
+    type::Ty *ty = tenv->Look(typ_);
     if (!ty) {
       errormsg->Error(pos_, "undefined type of %s", this->typ_->Name().data());
     } else {
@@ -455,6 +457,77 @@ void VarDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
 void TypeDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv, int labelcount,
                          err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  auto nameTyList = types_->GetList();
+  // 查重名,预先加入tenv
+  for (auto now = nameTyList.begin(); now != nameTyList.end(); now++) {
+    bool flag = true;
+    // 从now后面开始找有没有一样的
+    for (auto nxt = std::next(now, 1); nxt != nameTyList.end(); nxt++) {
+      // 这里比较字符串可能有性能开销 但是symbol还有next
+      if ((*now)->name_->Name() == (*nxt)->name_->Name()) {
+        // 重名 只查一处
+        errormsg->Error(pos_, "two types have the same name");
+        flag = false;
+        break;
+      }
+    }
+    // 没有重名
+    if (flag) {
+      tenv->Enter((*now)->name_, new type::NameTy((*now)->name_, nullptr));
+    } else {
+      // TODO:其实可以把所有没有重名的加进来
+      // 但毕竟测试集合的输出不太一样 就先这样了
+      break;
+    }
+  }
+  // 二次扫描
+  // 需要想明白的是我们存到环境栈里面的都是指针，所以可以互相递归引用，这很关键！
+  for (const auto &nameTy : nameTyList) {
+    // 去里面查找同名的类型"指针"
+    auto ty = tenv->Look(nameTy->name_);
+    // 查到的一定是之前加入的NameTy
+    // 其实这边需要考虑前面重名的影响，可以有部分没有加进来，然后之前又已经在里面
+    // TODO：这里可以之后再完善一些
+    // 现在假设都ok
+    if (ty) {
+      auto NameTy_ = dynamic_cast<type::NameTy *>(ty);
+      // 这边要注意前后两个 一个是 type::Ty 另一个是absyn::Ty
+      // 后者存有下层的Type信息(如RecordTy)
+      NameTy_->ty_ = nameTy->ty_->SemAnalyze(tenv, errormsg);
+    }
+  }
+  // 检查是否有死循环
+  bool loop = false;
+  for (const auto &nameTy : nameTyList) {
+    type::Ty *ty = tenv->Look(nameTy->name_);
+    // t 是nameTy 的type类型
+    // 举例： a = b  b = c  c = d  d = int  /  或者 d = b
+    // 这段建议画图理解一下 A = NameTy({a,B}) B = NameTy({b,C})
+    // C = NameTy({c,D}) D = NameTy({d,E}) E = IntTy
+    // 大写字母表示指针 小写字母表示Symbol
+    // 终止条件是 用一个set存出现过的，发现重复就是有循环
+    // TODO:可以尝试不用set 用双指针判环法
+    auto t = dynamic_cast<type::NameTy *>(ty)->ty_;
+    std::set<sym::Symbol *> S;
+    S.insert(nameTy->name_);
+    while (typeid(*t) == typeid(type::NameTy)) {
+      auto t_ptr = dynamic_cast<type::NameTy *>(t);
+      if (S.find(t_ptr->sym_) != S.end()) {
+        // 存在 循环！
+        loop = true;
+        break;
+      }
+      S.insert(t_ptr->sym_);
+      t = t_ptr->ty_;
+    }
+    if (loop) {
+      break;
+    }
+  }
+
+  if (loop) {
+    errormsg->Error(pos_, "illegal type cycle");
+  }
 }
 
 type::Ty *NameTy::SemAnalyze(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
