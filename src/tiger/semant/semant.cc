@@ -23,7 +23,7 @@ type::Ty *SimpleVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   /* TODO: Put your lab4 code here */
   env::EnvEntry *entry = venv->Look(sym_);
   if (entry && typeid(*entry) == typeid(env::VarEntry)) {
-    return (static_cast<env::VarEntry *>(entry))->ty_->ActualTy();
+    return (dynamic_cast<env::VarEntry *>(entry))->ty_->ActualTy();
   } else {
     errormsg->Error(pos_, "undefined variable %s", sym_->Name().data());
     return DEFULT_ERROR_TYPR;
@@ -247,7 +247,7 @@ type::Ty *AssignExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   type::Ty *exp_ty = exp_->SemAnalyze(venv, tenv, labelcount, errormsg);
   // for中的变量不能赋值
   if (typeid(*var_) == typeid(SimpleVar)) {
-    SimpleVar *svar = static_cast<SimpleVar *>(var_);
+    SimpleVar *svar = dynamic_cast<SimpleVar *>(var_);
     // 转成simplevar后去查找entry
     env::EnvEntry *entry = venv->Look(svar->sym_);
     if (entry->readonly_) {
@@ -347,21 +347,73 @@ type::Ty *ForExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 type::Ty *BreakExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // break必须在某个循环体，条件是labelcount > 0
+  if (labelcount == 0) {
+    errormsg->Error(pos_, "break is not inside any loop");
+  }
+  return type::VoidTy::Instance();
 }
 
 type::Ty *LetExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  // 缓存现在的环境
+  venv->BeginScope();
+  tenv->BeginScope();
+
+  const auto &list = decs_->GetList();
+  for (const auto &dec : list) {
+    // 解析dec
+    dec->SemAnalyze(venv, tenv, labelcount, errormsg);
+  }
+  // 计算body
+  type::Ty *result = body_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  // 恢复环境
+  tenv->EndScope();
+  venv->EndScope();
+
+  return result;
 }
 
 type::Ty *ArrayExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  type::Ty *ty = tenv->Look(typ_);
+  // 没找到定义过得数组变量
+  if (!ty) {
+    // Check type existence
+    errormsg->Error(pos_, "undefined type %s", typ_->Name().data());
+  } else {
+    ty = ty->ActualTy();
+    // Check if array
+    if (typeid(*ty) != typeid(type::ArrayTy)) {
+      errormsg->Error(pos_, "not an array type");
+    } else {
+      type::ArrayTy *arr = dynamic_cast<type::ArrayTy *>(ty);
+      // dec array item type
+      type::Ty *item_ty = arr->ty_;
+      // 解析size init两个exp
+      type::Ty *size_ty = size_->SemAnalyze(venv, tenv, labelcount, errormsg);
+      type::Ty *init_ty = init_->SemAnalyze(venv, tenv, labelcount, errormsg);
+      // size必须是int
+      if (typeid(*size_ty) != typeid(type::IntTy)) {
+        errormsg->Error(size_->pos_, "integer required");
+      }
+      if (!item_ty->IsSameType(init_ty)) {
+        errormsg->Error(init_->pos_, "type mismatch");
+      }
+
+      return arr->ActualTy();
+    }
+  }
+  // 找不到的话返回一个int array
+  return new type::ArrayTy(DEFULT_ERROR_TYPR);
 }
 
 type::Ty *VoidExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                               int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  return type::VoidTy::Instance();
 }
 
 void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
