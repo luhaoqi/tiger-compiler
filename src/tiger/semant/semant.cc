@@ -269,7 +269,7 @@ type::Ty *IfExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   type::Ty *test_ty = test_->SemAnalyze(venv, tenv, labelcount, errormsg);
   type::Ty *then_ty = then_->SemAnalyze(venv, tenv, labelcount, errormsg);
   type::Ty *else_ty = nullptr;
-
+  // test必须是int
   if (typeid(*test_ty) != typeid(type::IntTy)) {
     errormsg->Error(test_->pos_, "test of IfExp must be integer");
   }
@@ -285,7 +285,7 @@ type::Ty *IfExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     if (!then_ty->IsSameType(else_ty)) {
       errormsg->Error(then_->pos_, "then exp and else exp type mismatch");
     }
-    // 猜测返回的是then后面的类型
+    // 如果错误猜测返回的是then后面的类型，否则类型相同
     return then_ty->ActualTy();
   }
 }
@@ -293,11 +293,55 @@ type::Ty *IfExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
 type::Ty *WhileExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  type::Ty *test_ty = test_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  type::Ty *body_ty = nullptr;
+  // test必须是int
+  if (typeid(*test_ty) != typeid(type::IntTy)) {
+    errormsg->Error(test_->pos_, "while test must have int value");
+  }
+  // body必须是无值
+  if (body_) {
+    // body后执行，层数+1
+    body_ty = body_->SemAnalyze(venv, tenv, labelcount + 1, errormsg);
+    // 循环体必须无值
+    if (typeid(*body_ty) != typeid(type::VoidTy)) {
+      errormsg->Error(body_->pos_, "while body must produce no value");
+    }
+  }
+  // while语句是无值表达式
+  return type::VoidTy::Instance();
 }
 
 type::Ty *ForExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                              int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
+  type::Ty *lo_ty = lo_->SemAnalyze(venv, tenv, labelcount, errormsg);
+  type::Ty *hi_ty = hi_->SemAnalyze(venv, tenv, labelcount, errormsg);
+
+  type::Ty *body_ty = nullptr;
+
+  // 判断上下界是否是int
+  if (typeid(*lo_ty) != typeid(type::IntTy)) {
+    errormsg->Error(lo_->pos_, "for exp's range type is not integer");
+  }
+  if (typeid(*hi_ty) != typeid(type::IntTy)) {
+    errormsg->Error(hi_->pos_, "for exp's range type is not integer");
+  }
+
+  if (body_) {
+    // 把循环变量加入value environment 并且设置readonly属性不可修改
+    // 之后在解析body 循环层数+1 退出后回收循环变量
+    venv->BeginScope();
+    venv->Enter(var_, new env::VarEntry(type::IntTy::Instance(), true));
+    body_ty = body_->SemAnalyze(venv, tenv, labelcount + 1, errormsg);
+    venv->EndScope();
+    // 循环体必须无值
+    if (typeid(*body_ty) != typeid(type::VoidTy)) {
+      errormsg->Error(body_->pos_, "for exp's body must produce no value");
+    }
+  }
+  // 整个for语句无值
+  return type::VoidTy::Instance();
 }
 
 type::Ty *BreakExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
