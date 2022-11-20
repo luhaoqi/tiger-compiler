@@ -18,6 +18,7 @@ class Level;
 
 class PatchList {
  public:
+  // 用某一个Label填充所有true/false的位置
   void DoPatch(temp::Label *label) {
     for (auto &patch : patch_list_) *patch = label;
   }
