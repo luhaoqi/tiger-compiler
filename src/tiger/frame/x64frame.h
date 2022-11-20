@@ -23,5 +23,25 @@ class X64RegManager : public RegManager {
   temp::Temp* ReturnValue() {}
 };
 
+class InFrameAccess : public Access {
+ public:
+  int offset;
+  explicit InFrameAccess(int offset) : offset(offset) {}
+  tree::Exp* ToExp(tree::Exp* framePtr) const override {
+    return new tree::MemExp(
+        new tree::BinopExp(tree::BinOp::PLUS_OP, framePtr,
+                           new tree::ConstExp(offset)));  // mem(+(fp,offset))
+  }
+};
+
+class InRegAccess : public Access {
+ public:
+  temp::Temp* reg;
+  explicit InRegAccess(temp::Temp* reg) : reg(reg) {}
+  tree::Exp* ToExp(tree::Exp* framePtr) const override {
+    return new tree::TempExp(reg);
+  }
+};
+
 }  // namespace frame
 #endif  // TIGER_COMPILER_X64FRAME_H

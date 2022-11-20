@@ -11,7 +11,7 @@
 namespace frame {
 
 class RegManager {
-public:
+ public:
   RegManager() : temp_map_(temp::Map::Empty()) {}
 
   temp::Temp *GetRegister(int regno) { return regs_[regno]; }
@@ -62,16 +62,17 @@ public:
   [[nodiscard]] virtual temp::Temp *ReturnValue() = 0;
 
   temp::Map *temp_map_;
-protected:
+
+ protected:
   std::vector<temp::Temp *> regs_;
 };
 
 class Access {
-public:
+ public:
   /* TODO: Put your lab5 code here */
-  
+
   virtual ~Access() = default;
-  
+  virtual tree::Exp *ToExp(tree::Exp *framePtr) const = 0;
 };
 
 class Frame {
@@ -83,12 +84,12 @@ class Frame {
  */
 
 class Frag {
-public:
+ public:
   virtual ~Frag() = default;
 };
 
 class StringFrag : public Frag {
-public:
+ public:
   temp::Label *label_;
   std::string str_;
 
@@ -97,7 +98,7 @@ public:
 };
 
 class ProcFrag : public Frag {
-public:
+ public:
   tree::Stm *body_;
   Frame *frame_;
 
@@ -105,17 +106,17 @@ public:
 };
 
 class Frags {
-public:
+ public:
   Frags() = default;
   void PushBack(Frag *frag) { frags_.push_back(frag); }
-  const std::list<Frag*> &GetList() { return frags_; }
+  const std::list<Frag *> &GetList() { return frags_; }
 
-private:
-  std::list<Frag*> frags_;
+ private:
+  std::list<Frag *> frags_;
 };
 
 /* TODO: Put your lab5 code here */
 
-} // namespace frame
+}  // namespace frame
 
 #endif
