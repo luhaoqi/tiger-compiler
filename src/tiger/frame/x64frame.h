@@ -8,6 +8,7 @@
 #include "tiger/frame/frame.h"
 
 namespace frame {
+
 class X64RegManager : public RegManager {
  public:
   /* TODO: Put your lab5 code here */
@@ -43,10 +44,21 @@ class InRegAccess : public Access {
   tree::Exp* ToExp(tree::Exp* framePtr) const override {
     return new tree::TempExp(reg);
   }
+};
 
-  class X64Frame : public Frame {
-    /* TODO: Put your lab5 code here */
-  };
+class X64Frame : public Frame {
+  /* TODO: Put your lab5 code here */
+ public:
+  explicit X64Frame(temp::Label* name, const std::list<bool>& formals)
+      : Frame(name) {
+    // 根据传入的形参的逃逸属性allocLocal
+    for (auto escape : formals) {
+      formals_.push_back(allocLocal(escape));
+    }
+    // TODO: view_shift
+  }
+
+  frame::Access* allocLocal(bool escape) override;
 };
 
 }  // namespace frame

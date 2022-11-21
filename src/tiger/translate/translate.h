@@ -59,6 +59,16 @@ class Level {
   Level *parent_;
 
   /* TODO: Put your lab5 code here */
+  Level(frame::Frame *frame, Level *parent) : frame_(frame), parent_(parent) {}
+
+  static Level *NewLevel(tr::Level *parent, temp::Label *name,
+                         const std::list<bool> &formals) {
+    auto list = formals;
+    // 添加static link，static link需要放在stack上，所以escape
+    list.push_front(true);
+    frame::Frame *f = frame::FrameFatory::NewFrame(name, formals);
+    return new Level(f, parent);
+  }
 };
 
 class ProgTr {
@@ -79,11 +89,7 @@ class ProgTr {
   }
 
   ProgTr(std::unique_ptr<absyn::AbsynTree> absyn_tree,
-         std::unique_ptr<err::ErrorMsg> errormsg)
-      : absyn_tree_(std::move(absyn_tree)),
-        errormsg_(std::move(errormsg)),
-        tenv_(std::make_unique<env::TEnv>()),
-        venv_(std::make_unique<env::VEnv>()) {}
+         std::unique_ptr<err::ErrorMsg> errormsg);
 
  private:
   std::unique_ptr<absyn::AbsynTree> absyn_tree_;

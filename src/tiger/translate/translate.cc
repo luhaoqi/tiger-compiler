@@ -145,7 +145,32 @@ class CxExp : public Exp {
   }
 };
 
-void ProgTr::Translate() { /* TODO: Put your lab5 code here */
+ProgTr::ProgTr(std::unique_ptr<absyn::AbsynTree> absyn_tree,
+               std::unique_ptr<err::ErrorMsg> errormsg)
+    : absyn_tree_(std::move(absyn_tree)),
+      errormsg_(std::move(errormsg)),
+      tenv_(std::make_unique<env::TEnv>()),
+      venv_(std::make_unique<env::VEnv>()) {
+  // total goal: 还需要初始化 main_level
+  // 1. 初始化main_label 使用NamedLabel自定义label
+  temp::Label *main_label = temp::LabelFactory::NamedLabel("__tigermain__");
+  // 2. 初始化main_frame
+  frame::Frame *main_frame = frame::FrameFatory::NewFrame(main_label, {});
+  // 3. 初始化main_level_
+  main_level_ = std::make_unique<Level>(main_frame, nullptr);
+}
+
+void ProgTr::Translate() {
+  /* TODO: Put your lab5 code here */
+  // 定义见env.cc
+  // 初始化venv，这里是将运行时函数加入venv
+  FillBaseVEnv();
+  // 初始化tenv，将int、string加入tenv
+  FillBaseTEnv();
+  absyn_tree_->Translate(venv_.get(), tenv_.get(), main_level_.get(),
+                         temp::LabelFactory::NamedLabel("__tigermain__"),
+                         errormsg_.get());
+  // TODO: 保存最后的汇编代码
 }
 
 }  // namespace tr
