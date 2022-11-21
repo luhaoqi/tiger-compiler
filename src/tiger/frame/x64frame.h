@@ -24,6 +24,7 @@ class X64RegManager : public RegManager {
 };
 
 class InFrameAccess : public Access {
+  /* TODO: Put your lab5 code here */
  public:
   int offset;
   explicit InFrameAccess(int offset) : offset(offset) {}
@@ -35,12 +36,17 @@ class InFrameAccess : public Access {
 };
 
 class InRegAccess : public Access {
+  /* TODO: Put your lab5 code here */
  public:
   temp::Temp* reg;
   explicit InRegAccess(temp::Temp* reg) : reg(reg) {}
   tree::Exp* ToExp(tree::Exp* framePtr) const override {
     return new tree::TempExp(reg);
   }
+
+  class X64Frame : public Frame {
+    /* TODO: Put your lab5 code here */
+  };
 };
 
 }  // namespace frame

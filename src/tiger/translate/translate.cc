@@ -56,11 +56,16 @@ class ExExp : public Exp {
     /* TODO: Put your lab5 code here */
     return new tree::ExpStm(exp_);
   }
+  // 这个转换只会出现在IfExp和WhileExp的test中
   [[nodiscard]] Cx UnCx(err::ErrorMsg *errormsg) override {
     /* TODO: Put your lab5 code here */
     // if (exp) then exp1 else exp2
-    temp::Label *t = temp::LabelFactory::NewLabel();  // CJump为真时要跳转的标签
-    temp::Label *f = temp::LabelFactory::NewLabel();  // CJump为假时要跳转的标签
+    // TODO: 这里生成的label只是个占位符，在外面还是要被替换掉的
+    // 这样其实浪费了两个label，不过无所谓了，也可以写一个 new temp::Label
+    // 不过这样也会内存泄漏，自己取舍吧
+    // 其实有一种方法：外面直接用这里生成的label
+    temp::Label *t = temp::LabelFactory::NewLabel();
+    temp::Label *f = temp::LabelFactory::NewLabel();
 
     // 如果exp不等于0，那么跳转到t，否则跳转到f
     tree::CjumpStm *stm =
@@ -151,6 +156,7 @@ tr::ExpAndTy *AbsynTree::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    tr::Level *level, temp::Label *label,
                                    err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  return root_->Translate(venv, tenv, level, label, errormsg);
 }
 
 tr::ExpAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,

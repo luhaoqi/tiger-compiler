@@ -4,26 +4,7 @@ extern frame::RegManager *reg_manager;
 
 namespace frame {
 /* TODO: Put your lab5 code here */
-class InFrameAccess : public Access {
-public:
-  int offset;
+// InFrameAccess,InRegAccess,X64Frame的声明都放到x64frame.h
+// 这样才有代码提示
 
-  explicit InFrameAccess(int offset) : offset(offset) {}
-  /* TODO: Put your lab5 code here */
-};
-
-
-class InRegAccess : public Access {
-public:
-  temp::Temp *reg;
-
-  explicit InRegAccess(temp::Temp *reg) : reg(reg) {}
-  /* TODO: Put your lab5 code here */
-};
-
-class X64Frame : public Frame {
-  /* TODO: Put your lab5 code here */
-};
-/* TODO: Put your lab5 code here */
-
-} // namespace frame
+}  // namespace frame

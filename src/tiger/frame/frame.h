@@ -77,6 +77,9 @@ class Access {
 
 class Frame {
   /* TODO: Put your lab5 code here */
+  temp::Label *name_;            // 函数名
+  std::list<Access *> formals_;  // 形参
+  int offset;  // 栈指针偏移量，指向stack pointer 也是size
 };
 
 /**
