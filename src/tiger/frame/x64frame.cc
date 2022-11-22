@@ -126,7 +126,12 @@ X64RegManager::X64RegManager() : RegManager() {
  * @return return-sink registers
  */
 [[nodiscard]] temp::TempList* X64RegManager::ReturnSink() {
-  // TODO: 不清楚这是什么
+  // 出口活跃寄存器 第9章程序设计部分
+  // TODO: 也许可以加上Callee-saved regs?
+  temp::TempList* temp_list = CalleeSaves();
+  temp_list->Append(StackPointer());  //%rsp
+  temp_list->Append(ReturnValue());   //%rax
+  return temp_list;
 }
 
 /**
