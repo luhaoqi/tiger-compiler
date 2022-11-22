@@ -210,6 +210,11 @@ tr::ExpAndTy *SimpleVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    tr::Level *level, temp::Label *label,
                                    err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  auto entry = venv->Look(sym_);
+  env::VarEntry *var_entry = dynamic_cast<env::VarEntry *>(entry);
+  assert(var_entry);
+  auto exp = Translate_SimpleVar(var_entry->access_, level);
+  return new tr::ExpAndTy(exp, var_entry->ty_->ActualTy());
 }
 
 tr::ExpAndTy *FieldVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
