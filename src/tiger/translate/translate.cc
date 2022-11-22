@@ -15,6 +15,7 @@ namespace tr {
 
 Access *Access::AllocLocal(Level *level, bool escape) {
   /* TODO: Put your lab5 code here */
+  return new Access(level, level->frame_->allocLocal(escape));
 }
 
 class Cx {
@@ -177,6 +178,27 @@ void ProgTr::Translate() {
 
 namespace absyn {
 
+// 一些重复用到的辅助函数
+
+// 计算静态链 当前的level是current，目标level是target
+tree::Exp *StaticLink(tr::Level *current, tr::Level *target) {
+  tree::Exp *FP = new tree::TempExp(reg_manager->FramePointer());
+  while (current != target) {
+    assert(current && current->parent_);
+    FP = current->frame_->formals_.front()->ToExp(FP);
+    current = current->parent_;
+  }
+  return FP;
+}
+
+tr::Exp *Translate_SimpleVar(tr::Access *access, tr::Level *level) {
+  // calculate corresponding FP by static links
+  // current = level, target = access->lecel_
+  tree::Exp *FP = StaticLink(level, access->level_);
+  // MEM(+(TEMP fp, CONST offset));
+  return new tr::ExExp(access->access_->ToExp(FP));
+}
+
 tr::ExpAndTy *AbsynTree::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    tr::Level *level, temp::Label *label,
                                    err::ErrorMsg *errormsg) const {
@@ -308,6 +330,26 @@ tr::Exp *VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                            tr::Level *level, temp::Label *label,
                            err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  tr::ExpAndTy *init_info =
+      init_->Translate(venv, tenv, level, label, errormsg);
+  type::Ty *init_ty = init_info->ty_->ActualTy();
+  // 这里经过type checking应该没问题
+  if (typ_ != nullptr) {
+    // record 可能 init 为 nil
+    // 直接用声明的类型
+    init_ty == tenv->Look(typ_)->ActualTy();
+  }
+  // allocLocal for Access
+  tr::Access *access = tr::Access::AllocLocal(level, escape_);
+  // add variable to venv
+  venv->Enter(var_, new env::VarEntry(access, init_ty));
+
+  // get var
+  tr::Exp *var_exp = Translate_SimpleVar(access, level);
+
+  // move(var, init)
+  return new tr::NxExp(
+      new tree::MoveStm(var_exp->UnEx(), init_info->exp_->UnEx()));
 }
 
 tr::Exp *TypeDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,

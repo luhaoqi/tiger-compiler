@@ -82,7 +82,7 @@ class Frame {
   std::list<Access *> formals_;  // 形参
   int offset;  // 栈指针偏移量，指向stack pointer 也是size
 
-  explicit Frame(temp::Label *name) : name_(name){};
+  explicit Frame(temp::Label *name) : name_(name), offset(0){};
 
   virtual Access *allocLocal(bool escape) = 0;
 };
