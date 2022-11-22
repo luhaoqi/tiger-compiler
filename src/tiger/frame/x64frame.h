@@ -9,12 +9,31 @@
 
 namespace frame {
 
+enum RegisterName {
+  rax = 0,
+  rbx,
+  rcx,
+  rdx,
+  rsi,
+  rdi,
+  rbp,
+  rsp,
+  r8,
+  r9,
+  r10,
+  r11,
+  r12,
+  r13,
+  r14,
+  r15
+};
+
 class X64RegManager : public RegManager {
  public:
   /* TODO: Put your lab5 code here */
-  X64RegManager() : frame::RegManager() {}
-  temp::TempList* Registers() {}
-  temp::TempList* ArgRegs() {}
+  X64RegManager();
+  temp::TempList* Registers();
+  temp::TempList* ArgRegs();
   temp::TempList* CallerSaves() {}
   temp::TempList* CalleeSaves() {}
   temp::TempList* ReturnSink() {}
@@ -49,14 +68,7 @@ class InRegAccess : public Access {
 class X64Frame : public Frame {
   /* TODO: Put your lab5 code here */
  public:
-  explicit X64Frame(temp::Label* name, const std::list<bool>& formals)
-      : Frame(name) {
-    // 根据传入的形参的逃逸属性allocLocal
-    for (auto escape : formals) {
-      formals_.push_back(allocLocal(escape));
-    }
-    // TODO: view_shift
-  }
+  explicit X64Frame(temp::Label* name, const std::list<bool>& formals);
 
   frame::Access* allocLocal(bool escape) override;
 };
