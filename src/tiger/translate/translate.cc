@@ -361,19 +361,47 @@ tr::Exp *TypeDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                             tr::Level *level, temp::Label *label,
                             err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  // 虽然主程序去掉了lab4的type-checking，但这里默认都是对的不再做重复的类型检查(重名、循环)
+  // 这里直接复制semant.cc 中对应的插入语句
+  auto nameTyList = types_->GetList();
+  for (auto &nameTy : nameTyList) {
+    tenv->Enter(nameTy->name_, new type::NameTy(nameTy->name_, nullptr));
+  }
+  for (const auto &nameTy : nameTyList) {
+    auto ty = tenv->Look(nameTy->name_);
+    if (ty) {
+      auto NameTy_ = dynamic_cast<type::NameTy *>(ty);
+      assert(NameTy_);  // 不能为nullptr
+      NameTy_->ty_ = nameTy->ty_->Translate(tenv, errormsg);
+    }
+  }
+  // 随便返回一个，为了和VarDec保持一致
+  return new tr::ExExp(new tree::ConstExp(0));
 }
 
 type::Ty *NameTy::Translate(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  // 这里直接返回Look的结果也行，反正ActualTy一样
+  return new type::NameTy(name_, tenv->Look(name_));
 }
 
 type::Ty *RecordTy::Translate(env::TEnvPtr tenv,
                               err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  return new type::RecordTy(record_->MakeFieldList(tenv, errormsg));
 }
 
 type::Ty *ArrayTy::Translate(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  type::Ty *ty = tenv->Look(array_);
+  if (!ty) {
+    // Check type existence
+    errormsg->Error(pos_, "undefined type %s", array_->Name().data());
+  } else {
+    return new type::ArrayTy(ty);
+  }
+  // 如果错误就返回VoidTy,之后就基本不会再匹配上了
+  return type::VoidTy::Instance();
 }
 
 }  // namespace absyn
