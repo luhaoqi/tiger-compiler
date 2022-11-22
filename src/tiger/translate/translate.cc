@@ -329,6 +329,78 @@ tr::Exp *FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level, temp::Label *label,
                                 err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  // 同样不做type-checking中做过的内容
+  const auto &funList = this->functions_->GetList();
+
+  for (auto &fun : funList) {
+    type::TyList *formalTyList = fun->params_->MakeFormalTyList(tenv, errormsg);
+    type::Ty *resultTy;
+    if (fun->result_) {
+      // 查找返回值类型
+      resultTy = tenv->Look(fun->result_);
+    } else {
+      // 是过程不是函数
+      resultTy = type::VoidTy::Instance();
+    }
+    // create label
+    // TODO: 重要！
+    // 这里为了汇编中的label易读使用函数名字
+    // 之后需要改成别的以应对重名函数
+    temp::Label *fun_label = temp::LabelFactory::NamedLabel(fun->name_->Name());
+    // create  escape list to create level
+    std::list<bool> escapes;
+    for (auto &field : fun->params_->GetList()) {
+      escapes.push_back(field->escape_);
+    }
+    // create level
+    tr::Level *fun_level = tr::Level::NewLevel(level, fun_label, escapes);
+
+    venv->Enter(fun->name_, new env::FunEntry(fun_level, fun_label,
+                                              formalTyList, resultTy));
+  }
+
+  // 二次扫描
+  // 详细思路看TypeDec
+  for (const auto &fun : funList) {
+    type::TyList *formalTyList = fun->params_->MakeFormalTyList(tenv, errormsg);
+    env::FunEntry *entry =
+        dynamic_cast<env::FunEntry *>(venv->Look(fun->name_));
+    assert(entry != nullptr);
+
+    venv->BeginScope();
+    tenv->BeginScope();
+
+    // 执行body前把funDec中的临时变量加进去
+    const auto &fieldList = fun->params_->GetList();
+    const auto &tyList = formalTyList->GetList();
+    const auto &formalList = entry->level_->frame_->formals_;
+
+    assert(fieldList.size() == tyList.size());
+    assert(fieldList.size() == formalList.size() - 1);
+
+    auto it1 = fieldList.begin();
+    auto it2 = tyList.begin();
+    auto it3 = formalList.begin();
+    it3++;
+
+    // 加入venv 注意用新的VarEntry的构造函数
+    for (; it1 != fieldList.end(); ++it1, ++it2, ++it3) {
+      venv->Enter((*it1)->name_,
+                  new env::VarEntry(new tr::Access(entry->level_, *it3), *it2));
+    }
+
+    // 执行body
+    tr::ExpAndTy *ty =
+        fun->body_->Translate(venv, tenv, entry->level_, label, errormsg);
+
+    // 结束
+    venv->EndScope();
+    tenv->EndScope();
+
+    // TODO: 存储函数代码
+  }
+  return new tr::ExExp(new tree::ConstExp(0));
+  // 函数没有类似typedec的死循环
 }
 
 tr::Exp *VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
