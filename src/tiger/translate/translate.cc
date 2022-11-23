@@ -161,6 +161,8 @@ ProgTr::ProgTr(std::unique_ptr<absyn::AbsynTree> absyn_tree,
   main_level_ = std::make_unique<Level>(main_frame, nullptr);
 }
 
+// 下面的Translate中的label指的是如果遇到break应该跳到哪个label
+
 void ProgTr::Translate() {
   /* TODO: Put your lab5 code here */
   // 定义见env.cc
@@ -221,12 +223,45 @@ tr::ExpAndTy *FieldVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level, temp::Label *label,
                                   err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  tr::ExpAndTy *var_ExpTy = var_->Translate(venv, tenv, level, label, errormsg);
+  type::RecordTy *ty = dynamic_cast<type::RecordTy *>(var_ExpTy->ty_);
+  assert(ty);
+  auto fieldList = (ty)->fields_->GetList();
+  int i = 0;
+  // 注意需要用UnEx() 将tr::Exp 转为 tree::Exp 然后再用ExExp转换过来
+  for (const auto &x : fieldList) {
+    if (x->name_ == sym_) {
+      // MEM( +(exp, wordsize * num) )
+      tree::Exp *exp = new tree::MemExp(
+          new tree::BinopExp(tree::BinOp::PLUS_OP, var_ExpTy->exp_->UnEx(),
+                             new tree::ConstExp(i * reg_manager->WordSize())));
+      tr::ExExp *e = new tr::ExExp(exp);
+      return new tr::ExpAndTy(e, ty->ActualTy());
+    }
+    i++;
+  }
+  errormsg->Error(pos_, "field %s doesn't exist", sym_->Name().data());
+  assert(false);
 }
 
 tr::ExpAndTy *SubscriptVar::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                       tr::Level *level, temp::Label *label,
                                       err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  tr::ExpAndTy *var_ExpTy = var_->Translate(venv, tenv, level, label, errormsg);
+  type::ArrayTy *var_ty = dynamic_cast<type::ArrayTy *>(var_ExpTy->ty_);
+  assert(var_ty);
+  tr::ExpAndTy *sub_ExpTy =
+      subscript_->Translate(venv, tenv, level, label, errormsg);
+
+  // MEM( +(exp, wordsize * num) )
+  tree::Exp *mul_exp =
+      new tree::BinopExp(tree::BinOp::MUL_OP, sub_ExpTy->exp_->UnEx(),
+                         new tree::ConstExp(reg_manager->WordSize()));
+  tree::Exp *exp = new tree::MemExp(new tree::BinopExp(
+      tree::BinOp::PLUS_OP, var_ExpTy->exp_->UnEx(), mul_exp));
+  tr::ExExp *e = new tr::ExExp(exp);
+  return new tr::ExpAndTy(e, var_ty->ty_->ActualTy());
 }
 
 tr::ExpAndTy *VarExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
