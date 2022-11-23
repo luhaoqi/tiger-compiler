@@ -71,6 +71,7 @@ class X64Frame : public Frame {
   explicit X64Frame(temp::Label* name, const std::list<bool>& formals);
 
   frame::Access* allocLocal(bool escape) override;
+  void setViewShift(const std::list<bool>& escapes) override;
 };
 
 }  // namespace frame

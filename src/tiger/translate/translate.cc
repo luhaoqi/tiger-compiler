@@ -156,7 +156,7 @@ ProgTr::ProgTr(std::unique_ptr<absyn::AbsynTree> absyn_tree,
   // 1. 初始化main_label 使用NamedLabel自定义label
   temp::Label *main_label = temp::LabelFactory::NamedLabel("__tigermain__");
   // 2. 初始化main_frame
-  frame::Frame *main_frame = frame::FrameFatory::NewFrame(main_label, {});
+  frame::Frame *main_frame = frame::FrameFactory::NewFrame(main_label, {});
   // 3. 初始化main_level_
   main_level_ = std::make_unique<Level>(main_frame, nullptr);
 }
@@ -170,10 +170,12 @@ void ProgTr::Translate() {
   FillBaseVEnv();
   // 初始化tenv，将int、string加入tenv
   FillBaseTEnv();
-  absyn_tree_->Translate(venv_.get(), tenv_.get(), main_level_.get(),
-                         temp::LabelFactory::NamedLabel("__tigermain__"),
-                         errormsg_.get());
-  // TODO: 保存最后的汇编代码
+  auto main_ExpTy = absyn_tree_->Translate(
+      venv_.get(), tenv_.get(), main_level_.get(),
+      temp::LabelFactory::NamedLabel("__tigermain__"), errormsg_.get());
+  // save code
+  frags->PushBack(
+      new frame::ProcFrag(main_ExpTy->exp_->UnNx(), main_level_->frame_));
 }
 
 }  // namespace tr
@@ -199,6 +201,20 @@ tr::Exp *Translate_SimpleVar(tr::Access *access, tr::Level *level) {
   tree::Exp *FP = StaticLink(level, access->level_);
   // MEM(+(TEMP fp, CONST offset));
   return new tr::ExExp(access->access_->ToExp(FP));
+}
+
+// 保存函数定义的代码
+void saveFunctionFrag(tr::Exp *body, tr::Level *level) {
+  // procEntryExit1(view shift) + move(RV, body)
+
+  // move(RV, body)
+  tree::Stm *stm = new tree::MoveStm(
+      new tree::TempExp(reg_manager->ReturnValue()), body->UnEx());
+
+  // view shift
+  stm = frame::FrameFactory::ProcEntryExit1(level->frame_, stm);
+  // save code
+  frags->PushBack(new frame::ProcFrag(stm, level->frame_));
 }
 
 tr::ExpAndTy *AbsynTree::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
@@ -268,24 +284,35 @@ tr::ExpAndTy *VarExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level, temp::Label *label,
                                 err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  return var_->Translate(venv, tenv, level, label, errormsg);
 }
 
 tr::ExpAndTy *NilExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level, temp::Label *label,
                                 err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  return new tr::ExpAndTy(new tr::ExExp(new tree::ConstExp(0)),
+                          type::NilTy::Instance());
 }
 
 tr::ExpAndTy *IntExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level, temp::Label *label,
                                 err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  return new tr::ExpAndTy(new tr::ExExp(new tree::ConstExp(val_)),
+                          type::IntTy::Instance());
 }
 
 tr::ExpAndTy *StringExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    tr::Level *level, temp::Label *label,
                                    err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  // 定义该字符串的label
+  temp::Label *str_label = temp::LabelFactory::NewLabel();
+  // 把字符串存到片段中
+  frags->PushBack(new frame::StringFrag(str_label, str_));
+  return new tr::ExpAndTy(new tr::ExExp(new tree::NameExp(str_label)),
+                          type::StringTy::Instance());
 }
 
 tr::ExpAndTy *CallExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
@@ -425,7 +452,7 @@ tr::Exp *FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     }
 
     // 执行body
-    tr::ExpAndTy *ty =
+    tr::ExpAndTy *body_ExpTy =
         fun->body_->Translate(venv, tenv, entry->level_, label, errormsg);
 
     // 结束
@@ -433,6 +460,7 @@ tr::Exp *FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     tenv->EndScope();
 
     // TODO: 存储函数代码
+    saveFunctionFrag(body_ExpTy->exp_, entry->level_);
   }
   return new tr::ExExp(new tree::ConstExp(0));
   // 函数没有类似typedec的死循环

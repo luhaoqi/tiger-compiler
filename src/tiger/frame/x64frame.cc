@@ -13,13 +13,53 @@ X64Frame::X64Frame(temp::Label* name, const std::list<bool>& formals)
   for (auto escape : formals) {
     formals_.push_back(allocLocal(escape));
   }
-  // TODO: view_shift
+}
+
+void X64Frame::setViewShift(const std::list<bool>& escapes) {
+  tree::Exp *src, *dst;
+  tree::Stm* stm;
+
+  // 参数寄存器: %rdi,%rsi,%rdx,%rcx,%r8,%r9
+  const auto& reg_list = reg_manager->ArgRegs()->GetList();
+  auto it = reg_list.begin();
+
+  int i = 0;  // 第几个超过Maxargs的参数
+  const int ws = reg_manager->WordSize();
+  temp::Temp* FP = reg_manager->FramePointer();
+
+  // 执行view shift，把所有参数都转移到该函数的虚寄存器中
+  // 参数以%rdi,%rsi,%rdx,%rcx,%r8,%r9的顺序排列
+  // move t1,%rdi; move t2 %rsi ...
+  for (frame::Access* access : formals_) {
+    // dst is decided by InRegAccess or InFrameAccess, just invoke ToExp
+    dst = access->ToExp(new tree::TempExp(FP));
+
+    // src is decided by if it's first 6 args
+    if (it != reg_list.end()) {
+      src = new tree::TempExp(*it);
+      it++;
+    } else {
+      // 帧指针现在指向return address，因此栈上的第i个参数的offset是i*wordsize
+      // MEM( +(FP, i * wordsize) )
+      i++;
+      src = new tree::MemExp(new tree::BinopExp(tree::BinOp::PLUS_OP,
+                                                new tree::TempExp(FP),
+                                                new tree::ConstExp(i * ws)));
+    }
+    // move dst, src
+    stm = new tree::MoveStm(dst, src);
+
+    // view_shift保存执行view shift所需要的所有语句，把新的move加入到后面
+    view_shift = view_shift ? new tree::SeqStm(view_shift, stm) : stm;
+  }
 }
 
 // create a new frame
-Frame* FrameFatory::NewFrame(temp::Label* label,
-                             const std::list<bool>& formals) {
-  return new X64Frame(label, formals);
+Frame* FrameFactory::NewFrame(temp::Label* label,
+                              const std::list<bool>& formals) {
+  frame::X64Frame* f = new X64Frame(label, formals);
+  f->setViewShift(formals);
+  return f;
 }
 
 // alloc local variable in frame
@@ -35,6 +75,12 @@ frame::Access* X64Frame::allocLocal(bool escape) {
     local = new InRegAccess(temp::TempFactory::NewTemp());
   }
   return local;
+}
+
+// view shift
+tree::Stm* FrameFactory::ProcEntryExit1(Frame* f, tree::Stm* stm) {
+  // 直接把生成frame时候的shift view 语句粘贴到stm前面
+  return new tree::SeqStm(f->view_shift, stm);
 }
 
 // X64RegManager

@@ -81,19 +81,22 @@ class Frame {
   temp::Label *name_;            // 函数名
   std::list<Access *> formals_;  // 形参
   int offset;  // 栈指针偏移量，指向stack pointer 也是size
+  tree::Stm *view_shift;
 
   explicit Frame(temp::Label *name) : name_(name), offset(0){};
 
   virtual Access *allocLocal(bool escape) = 0;
+  virtual void setViewShift(const std::list<bool> &escapes) = 0;
 };
 
 // Frame 工厂类，用来构造Frame
-class FrameFatory {
+class FrameFactory {
  public:
   static Frame *NewFrame(temp::Label *label, const std::list<bool> &formals);
+  static tree::Stm *ProcEntryExit1(Frame *f, tree::Stm *stm);
 
  private:
-  static FrameFatory frame_fatory;
+  static FrameFactory frame_factory;
 };
 
 /**

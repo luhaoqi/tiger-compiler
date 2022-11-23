@@ -66,7 +66,7 @@ class Level {
     auto list = formals;
     // 添加static link，static link需要放在stack上，所以escape
     list.push_front(true);
-    frame::Frame *f = frame::FrameFatory::NewFrame(name, formals);
+    frame::Frame *f = frame::FrameFactory::NewFrame(name, formals);
     return new Level(f, parent);
   }
 };
