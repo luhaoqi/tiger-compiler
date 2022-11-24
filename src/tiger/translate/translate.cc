@@ -61,19 +61,18 @@ class ExExp : public Exp {
   [[nodiscard]] Cx UnCx(err::ErrorMsg *errormsg) override {
     /* TODO: Put your lab5 code here */
     // if (exp) then exp1 else exp2
-    // TODO: 这里生成的label只是个占位符，在外面还是要被替换掉的
-    // 这样其实浪费了两个label，不过无所谓了，也可以写一个 new temp::Label
-    // 不过这样也会内存泄漏，自己取舍吧
-    // 其实有一种方法：外面直接用这里生成的label
-    temp::Label *t = temp::LabelFactory::NewLabel();
-    temp::Label *f = temp::LabelFactory::NewLabel();
+    // 不浪费造成内存泄漏的方法： 赋值为nullptr
+    // 需要注意的是 即使对Cjump中的指针赋值为nullptr
+    // 你放到patchList中的还是指针的指针，二重指针，还是有意义的
+    // temp::Label *t = temp::LabelFactory::NewLabel();
+    // temp::Label *f = temp::LabelFactory::NewLabel();
 
     // 如果exp不等于0，那么跳转到t，否则跳转到f
-    tree::CjumpStm *stm =
-        new tree::CjumpStm(tree::NE_OP, exp_, new tree::ConstExp(0), t, f);
+    tree::CjumpStm *stm = new tree::CjumpStm(
+        tree::NE_OP, exp_, new tree::ConstExp(0), nullptr, nullptr);
 
-    auto trues = PatchList({&t});
-    auto falses = PatchList({&f});
+    auto trues = PatchList({&stm->true_label_});
+    auto falses = PatchList({&stm->false_label_});
     return tr::Cx(trues, falses, stm);
   }
 };
@@ -541,12 +540,83 @@ tr::ExpAndTy *AssignExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    tr::Level *level, temp::Label *label,
                                    err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  tr::ExpAndTy *var_ExpTy = var_->Translate(venv, tenv, level, label, errormsg);
+  tr::ExpAndTy *exp_ExpTy = exp_->Translate(venv, tenv, level, label, errormsg);
+  // move var, exp
+  return new tr::ExpAndTy(
+      new tr::NxExp(
+          new tree::MoveStm(var_ExpTy->exp_->UnEx(), exp_ExpTy->exp_->UnEx())),
+      type::VoidTy::Instance());
 }
 
 tr::ExpAndTy *IfExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                tr::Level *level, temp::Label *label,
                                err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  tr::ExpAndTy *test_ExpTy =
+      test_->Translate(venv, tenv, level, label, errormsg);
+  tr::ExpAndTy *then_ExpTy =
+      then_->Translate(venv, tenv, level, label, errormsg);
+  tr::ExpAndTy *else_ExpTy;
+  if (elsee_) {
+    else_ExpTy = elsee_->Translate(venv, tenv, level, label, errormsg);
+  }
+  // test: if (test) then goto t else goto f
+  // t: move r, then; goto done
+  // f: move r, else; goto done
+  // done:
+
+  // r是上面的return value存放的寄存器; t/f是true/false对应的label
+  temp::Temp *r = temp::TempFactory::NewTemp();
+  temp::Label *t = temp::LabelFactory::NewLabel();
+  temp::Label *f = temp::LabelFactory::NewLabel();
+  temp::Label *done = temp::LabelFactory::NewLabel();
+
+  // 用来作为jump的参数，不知道为什么需要vector
+  auto *done_label_list = new std::vector<temp::Label *>({done});
+
+  tr::Cx cx = test_ExpTy->exp_->UnCx(errormsg);
+
+  cx.trues_.DoPatch(t);
+  cx.falses_.DoPatch(f);
+
+  // 如果有else分支
+  if (elsee_) {
+    return new tr::ExpAndTy(
+        new tr::ExExp(new tree::EseqExp(
+            cx.stm_,
+            new tree::EseqExp(
+                new tree::LabelStm(t),
+                new tree::EseqExp(
+                    new tree::MoveStm(new tree::TempExp(r),
+                                      then_ExpTy->exp_->UnEx()),
+                    new tree::EseqExp(
+                        new tree::JumpStm(new tree::NameExp(done),
+                                          done_label_list),
+                        new tree::EseqExp(
+                            new tree::LabelStm(f),
+                            new tree::EseqExp(
+                                new tree::MoveStm(new tree::TempExp(r),
+                                                  else_ExpTy->exp_->UnEx()),
+                                new tree::EseqExp(
+                                    new tree::JumpStm(new tree::NameExp(done),
+                                                      done_label_list),
+                                    new tree::EseqExp(
+                                        new tree::LabelStm(done),
+                                        new tree::TempExp(r)))))))))),
+        then_ExpTy->ty_->ActualTy());
+  } else {
+    // if test then goto t
+    // t: then_exp
+    // f:
+    return new tr::ExpAndTy(
+        new tr::NxExp(new tree::SeqStm(
+            cx.stm_,
+            new tree::SeqStm(new tree::LabelStm(t),
+                             new tree::SeqStm(then_ExpTy->exp_->UnNx(),
+                                              new tree::LabelStm(f))))),
+        then_ExpTy->ty_->ActualTy());
+  }
 }
 
 tr::ExpAndTy *WhileExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
@@ -565,6 +635,12 @@ tr::ExpAndTy *BreakExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level, temp::Label *label,
                                   err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  // 这里假设已经通过type-checking
+  // simply :  jump label
+  return new tr::ExpAndTy(
+      new tr::NxExp(new tree::JumpStm(new tree::NameExp(label),
+                                      new std::vector<temp::Label *>({label}))),
+      type::VoidTy::Instance());
 }
 
 tr::ExpAndTy *LetExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
@@ -583,6 +659,7 @@ tr::ExpAndTy *VoidExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                  tr::Level *level, temp::Label *label,
                                  err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  return new tr::ExpAndTy(nullptr, type::VoidTy::Instance());
 }
 
 tr::Exp *FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
