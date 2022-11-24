@@ -39,8 +39,10 @@ void X64Frame::setViewShift(const std::list<bool>& escapes) {
       src = new tree::TempExp(*it);
       it++;
     } else {
-      // 帧指针现在指向return address，因此栈上的第i个参数的offset是i*wordsize
+      // 帧指针现在指向return address
+      // 因此栈上的第i个参数的offset是i*wordsize(向上走)
       // MEM( +(FP, i * wordsize) )
+      // |  ...  |  arg 8  |  arg 7  |  return address  |  saved rbp (FP) |  ...
       i++;
       src = new tree::MemExp(new tree::BinopExp(tree::BinOp::PLUS_OP,
                                                 new tree::TempExp(FP),
@@ -81,6 +83,10 @@ frame::Access* X64Frame::allocLocal(bool escape) {
 tree::Stm* FrameFactory::ProcEntryExit1(Frame* f, tree::Stm* stm) {
   // 直接把生成frame时候的shift view 语句粘贴到stm前面
   return new tree::SeqStm(f->view_shift, stm);
+}
+
+tree::Exp* FrameFactory::externalCall(temp::Label* name, tree::ExpList* args) {
+  return new tree::CallExp(new tree::NameExp(name), args);
 }
 
 // X64RegManager

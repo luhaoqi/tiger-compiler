@@ -82,8 +82,10 @@ class Frame {
   std::list<Access *> formals_;  // 形参
   int offset;  // 栈指针偏移量，指向stack pointer 也是size
   tree::Stm *view_shift;
+  int maxArgs;  // frame代表的函数作为caller时调用的函数的最大参数，用于决定frame的size
 
-  explicit Frame(temp::Label *name) : name_(name), offset(0){};
+  explicit Frame(temp::Label *name) : name_(name), offset(0), maxArgs(0) {}
+  void update_maxArgs(int x) { maxArgs = x > maxArgs ? x : maxArgs; }
 
   virtual Access *allocLocal(bool escape) = 0;
   virtual void setViewShift(const std::list<bool> &escapes) = 0;
@@ -94,6 +96,7 @@ class FrameFactory {
  public:
   static Frame *NewFrame(temp::Label *label, const std::list<bool> &formals);
   static tree::Stm *ProcEntryExit1(Frame *f, tree::Stm *stm);
+  static tree::Exp *externalCall(temp::Label *name, tree::ExpList *args);
 
  private:
   static FrameFactory frame_factory;

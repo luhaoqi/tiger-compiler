@@ -189,6 +189,7 @@ tree::Exp *StaticLink(tr::Level *current, tr::Level *target) {
   tree::Exp *FP = new tree::TempExp(reg_manager->FramePointer());
   while (current != target) {
     assert(current && current->parent_);
+    // 自定义函数的第一个参数是静态链 存的就是parent的FP
     FP = current->frame_->formals_.front()->ToExp(FP);
     current = current->parent_;
   }
@@ -319,6 +320,39 @@ tr::ExpAndTy *CallExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                  tr::Level *level, temp::Label *label,
                                  err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  env::EnvEntry *entry = venv->Look(func_);
+  assert(entry);
+  env::FunEntry *funEntry = dynamic_cast<env::FunEntry *>(entry);
+  assert(funEntry);
+  auto expList = args_->GetList();
+  // 作为建立tree::CallExp的参数 args_
+  tree::ExpList *treeExpList = new tree::ExpList();
+  // 遍历参数进行translate
+  for (auto exp : expList) {
+    auto argExpTy = exp->Translate(venv, tenv, level, label, errormsg);
+    treeExpList->Append(argExpTy->exp_->UnEx());
+  }
+  frame::Frame *caller_frame = level->frame_;
+  // 库函数的level是main_level, parent 是 nullptr
+  // 一般函数都是定义在main_level中,最高层的parent是main_level
+  if (funEntry->level_->parent_ == nullptr) {
+    // 是库函数
+    // update maxArgs
+    caller_frame->update_maxArgs(treeExpList->GetList().size());
+    return new tr::ExpAndTy(
+        new tr::ExExp(frame::FrameFactory::externalCall(func_, treeExpList)),
+        funEntry->result_);
+  } else {
+    // 是自定义函数
+    // 静态链是第一个参数插在最前面
+    treeExpList->Insert(StaticLink(level, funEntry->level_->parent_));
+
+    // update maxArgs
+    caller_frame->update_maxArgs(treeExpList->GetList().size());
+    return new tr::ExpAndTy(
+        new tr::ExExp(new tree::CallExp(new tree::NameExp(func_), treeExpList)),
+        funEntry->result_);
+  }
 }
 
 tr::ExpAndTy *OpExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
