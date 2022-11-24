@@ -359,18 +359,182 @@ tr::ExpAndTy *OpExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                tr::Level *level, temp::Label *label,
                                err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  tr::ExpAndTy *left_ExpTy =
+      left_->Translate(venv, tenv, level, label, errormsg);
+  tr::ExpAndTy *right_ExpTy =
+      right_->Translate(venv, tenv, level, label, errormsg);
+  auto left = left_ExpTy->exp_->UnEx(), right = right_ExpTy->exp_->UnEx();
+  tr::Exp *op_exp;
+  if (left_ExpTy->ty_->IsSameType(type::StringTy::Instance())) {
+    // 字符串操作 只支持==/<>
+    switch (oper_) {
+      case EQ_OP:
+      case NEQ_OP: {
+        tree::Exp *treeExp = frame::FrameFactory::externalCall(
+            temp::LabelFactory::NamedLabel("string_equal"),
+            new tree::ExpList({left, right}));
+        // not(x) 可以简单的用 1-x 实现 ，也可以在调用not函数
+        if (oper_ == Oper::NEQ_OP)
+          treeExp = new tree::BinopExp(tree::BinOp::MINUS_OP,
+                                       new tree::ConstExp(1), treeExp);
+        op_exp = new tr::ExExp(treeExp);
+        break;
+      }
+      default:
+        // 字符串暂不支持除了等于和不等于之外的运算符
+        assert(false);
+        break;
+    }
+  } else {
+    // 数值操作
+    tree::CjumpStm *stm = nullptr;  // 关系运算
+    tree::BinopExp *exp = nullptr;  // 数值运算
+
+    switch (oper_) {
+        // & | + - * /
+      case AND_OP:
+        exp = new tree::BinopExp(tree::BinOp::AND_OP, left, right);
+        break;
+      case OR_OP:
+        exp = new tree::BinopExp(tree::BinOp::OR_OP, left, right);
+        break;
+      case PLUS_OP:
+        exp = new tree::BinopExp(tree::BinOp::PLUS_OP, left, right);
+        break;
+      case MINUS_OP:
+        exp = new tree::BinopExp(tree::BinOp::MINUS_OP, left, right);
+        break;
+      case TIMES_OP:
+        exp = new tree::BinopExp(tree::BinOp::MUL_OP, left, right);
+        break;
+      case DIVIDE_OP:
+        exp = new tree::BinopExp(tree::BinOp::DIV_OP, left, right);
+        break;
+        // relation operation: == != < <= > >=
+      case EQ_OP:
+        stm = new tree::CjumpStm(tree::RelOp::EQ_OP, left, right, nullptr,
+                                 nullptr);
+        break;
+      case NEQ_OP:
+        stm = new tree::CjumpStm(tree::RelOp::NE_OP, left, right, nullptr,
+                                 nullptr);
+        break;
+      case LT_OP:
+        stm = new tree::CjumpStm(tree::RelOp::LT_OP, left, right, nullptr,
+                                 nullptr);
+        break;
+      case LE_OP:
+        stm = new tree::CjumpStm(tree::RelOp::LE_OP, left, right, nullptr,
+                                 nullptr);
+        break;
+      case GT_OP:
+        stm = new tree::CjumpStm(tree::RelOp::GT_OP, left, right, nullptr,
+                                 nullptr);
+        break;
+      case GE_OP:
+        stm = new tree::CjumpStm(tree::RelOp::GE_OP, left, right, nullptr,
+                                 nullptr);
+        break;
+      default:
+        assert(false);
+        break;
+    }
+    if (stm) {
+      // 现在两个标签都还是nullptr，这里传入地址，在UnEx中会DoPatch
+      tr::PatchList t({&(stm->true_label_)}), f({&(stm->false_label_)});
+      op_exp = new tr::CxExp(t, f, stm);
+    } else if (exp) {
+      op_exp = new tr::ExExp(exp);
+    }
+    assert(false);
+  }
+  return new tr::ExpAndTy(op_exp, type::IntTy::Instance());
+}
+
+// 为了画出书上树的形状，这个也可以用循环实现
+tree::Stm *assignRecordField(const std::vector<tr::Exp *> &exp_list,
+                             temp::Temp *r, int index) {
+  int size = (int)exp_list.size();
+  // move Mem( +(r,index*wordsize) ) , exp[index]
+  auto move_stm = new tree::MoveStm(
+      new tree::MemExp(new tree::BinopExp(
+          tree::BinOp::PLUS_OP, new tree::TempExp(r),
+          new tree::ConstExp(index * reg_manager->WordSize()))),
+      exp_list[index]->UnEx());
+
+  if (index == size - 1) {
+    return move_stm;
+  } else {
+    return new tree::SeqStm(move_stm,
+                            assignRecordField(exp_list, r, index + 1));
+  }
 }
 
 tr::ExpAndTy *RecordExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    tr::Level *level, temp::Label *label,
                                    err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  // 思路见书本p118 7.2.11 记录和数组的创建
+  type::Ty *ty = tenv->Look(typ_)->ActualTy();
+  std::vector<tr::Exp *> exp_list;
+
+  // record 有很多 fields 初始化的每个内容都需要translate
+  const auto &efields = fields_->GetList();
+  for (auto efield : efields) {
+    exp_list.push_back(
+        efield->exp_->Translate(venv, tenv, level, label, errormsg)->exp_);
+  }
+
+  tr::Exp *r_exp;
+  // 申请一个寄存器 用来存放record的指针
+  temp::Temp *r = temp::TempFactory::NewTemp();
+
+  // 1. 调用库函数申请内存
+  // 因为每个field大小都是一样的，为一个wordsize
+  // 所以申请的大小是域的数量，每个域用一个指针指向
+  auto *args = new tree::ExpList({new tree::ConstExp(
+      reg_manager->WordSize() * static_cast<int>(exp_list.size()))});
+  // 2. move r, pointer_record
+  tree::Stm *stm = new tree::MoveStm(
+      new tree::TempExp(r),
+      frame::FrameFactory::externalCall(
+          temp::LabelFactory::NamedLabel("alloc_record"), args));
+
+  // 3. 给每个域赋初值
+  stm = new tree::SeqStm(stm, assignRecordField(exp_list, r, 0));
+
+  // 最后是一个EseqExp 分别是前面的stm和返回的一个Temp(r)
+  r_exp = new tr::ExExp(new tree::EseqExp(stm, new tree::TempExp(r)));
+  return new tr::ExpAndTy(r_exp, ty);
 }
 
 tr::ExpAndTy *SeqExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level, temp::Label *label,
                                 err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  if (!seq_ || seq_->GetList().empty()) {
+    return new tr::ExpAndTy(nullptr, type::VoidTy::Instance());
+  }
+  std::list<tr::Exp *> exp_list;
+  type::Ty *ty = type::VoidTy::Instance();
+
+  const auto &seqs = seq_->GetList();
+  for (absyn::Exp *exp : seqs) {
+    tr::ExpAndTy *expAndTy = exp->Translate(venv, tenv, level, label, errormsg);
+    exp_list.push_back(expAndTy->exp_);
+    ty = expAndTy->ty_;  // 取最后一个ty
+  }
+
+  tr::Exp *res = new tr::ExExp(new tree::ConstExp(0));
+  for (tr::Exp *exp : exp_list) {
+    if (exp) {
+      res = new tr::ExExp(new tree::EseqExp(res->UnNx(), exp->UnEx()));
+    } else {
+      res =
+          new tr::ExExp(new tree::EseqExp(res->UnNx(), new tree::ConstExp(0)));
+    }
+  }
+  return new tr::ExpAndTy(res, ty);
 }
 
 tr::ExpAndTy *AssignExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
