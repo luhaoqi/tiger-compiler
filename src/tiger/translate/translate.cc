@@ -742,12 +742,46 @@ tr::ExpAndTy *LetExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level, temp::Label *label,
                                 err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  tree::Stm *dec_stm = nullptr;
+  // let语句里面的dec作用域只在let内部
+  venv->BeginScope();
+  tenv->BeginScope();
+
+  // 将dec翻译成stm
+  if (decs_) {
+    for (auto &dec : decs_->GetList()) {
+      auto stm = dec->Translate(venv, tenv, level, label, errormsg)->UnNx();
+      dec_stm = dec_stm ? new tree::SeqStm(dec_stm, stm) : stm;
+    }
+  }
+
+  tr::ExpAndTy *body_ExpTy =
+      body_->Translate(venv, tenv, level, label, errormsg);
+
+  venv->EndScope();
+  tenv->EndScope();
+
+  tree::Exp *res;
+  res = dec_stm ? new tree::EseqExp(dec_stm, body_ExpTy->exp_->UnEx())
+                : body_ExpTy->exp_->UnEx();
+
+  return new tr::ExpAndTy(new tr::ExExp(res), body_ExpTy->ty_->ActualTy());
 }
 
 tr::ExpAndTy *ArrayExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level, temp::Label *label,
                                   err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  auto size_ExpTy = size_->Translate(venv, tenv, level, label, errormsg);
+  auto init_ExpTy = init_->Translate(venv, tenv, level, label, errormsg);
+  type::Ty *ty = tenv->Look(typ_)->ActualTy();
+
+  // 赋初值都在函数里面了，比record简单多了
+  tr::Exp *res = new tr::ExExp(frame::FrameFactory::externalCall(
+      temp::LabelFactory::NamedLabel("init_array"),
+      new tree::ExpList({size_ExpTy->exp_->UnEx(), init_ExpTy->exp_->UnEx()})));
+
+  return new tr::ExpAndTy(res, ty);
 }
 
 tr::ExpAndTy *VoidExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
