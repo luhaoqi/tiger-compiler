@@ -623,12 +623,107 @@ tr::ExpAndTy *WhileExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                   tr::Level *level, temp::Label *label,
                                   err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  temp::Label *done_label = temp::LabelFactory::NewLabel();
+  tr::ExpAndTy *test_ExpTy =
+      test_->Translate(venv, tenv, level, label, errormsg);
+  // 注意这边传递的label变成了done_label 表示在里面break将跳出循环
+  tr::ExpAndTy *body_ExpTy =
+      body_->Translate(venv, tenv, level, done_label, errormsg);
+  // test: if condition then goto body else goto done
+  // body: (bodyExp) goto test
+  // done:
+  temp::Label *test_label = temp::LabelFactory::NewLabel();
+  temp::Label *body_label = temp::LabelFactory::NewLabel();
+  tr::Cx cx = test_ExpTy->exp_->UnCx(errormsg);
+  cx.trues_.DoPatch(body_label);
+  cx.falses_.DoPatch(done_label);
+  return new tr::ExpAndTy(
+      new tr::NxExp(new tree::SeqStm(
+          new tree::LabelStm(test_label),
+          new tree::SeqStm(
+              // test: if condition then goto body else goto done
+              cx.stm_,
+              new tree::SeqStm(
+                  // body: (bodyExp) goto test
+                  new tree::LabelStm(body_label),
+                  new tree::SeqStm(
+                      body_ExpTy->exp_->UnNx(),
+                      new tree::SeqStm(
+                          new tree::JumpStm(
+                              new tree::NameExp(test_label),
+                              new std::vector<temp::Label *>({test_label})),
+                          // done :
+                          new tree::LabelStm(done_label))))))),
+      body_ExpTy->ty_->ActualTy());
 }
 
 tr::ExpAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                 tr::Level *level, temp::Label *label,
                                 err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
+  venv->BeginScope();
+
+  temp::Label *done_label = temp::LabelFactory::NewLabel();
+  tr::ExpAndTy *lo_ExpTy = lo_->Translate(venv, tenv, level, label, errormsg);
+  tr::ExpAndTy *hi_ExpTy = hi_->Translate(venv, tenv, level, label, errormsg);
+
+  // 循环变量的escape属性自己存储，在find escape中进行设置
+  tr::Access *access = tr::Access::AllocLocal(level, escape_);
+  // 最后设置一个readonly属性(只在这里用到)
+  venv->Enter(var_, new env::VarEntry(access, lo_ExpTy->ty_->ActualTy(), true));
+
+  // 注意body中的break到的label是done_label
+  tr::ExpAndTy *body_ExpTy =
+      body_->Translate(venv, tenv, level, done_label, errormsg);
+
+  venv->EndScope();
+
+  // move i, lo
+  // move limit, hi
+  // test: if i<=hi goto body else goto done
+  // body: (bodyExp); i = i + 1; goto test
+  // done:
+  tr::Exp *final_exp;
+  temp::Label *body_label = temp::LabelFactory::NewLabel();
+  temp::Label *test_label = temp::LabelFactory::NewLabel();
+  // 获取循环变量i的表达式，用ToExp因为可能在frame也可能在reg
+  tree::Exp *i =
+      access->access_->ToExp(new tree::TempExp(reg_manager->FramePointer()));
+  // move i, lo
+  auto i_init = new tree::MoveStm(i, lo_ExpTy->exp_->UnEx());
+  // 循环的上界存到一个寄存器，否则如果很复杂的话每次重复计算性能开销很大
+  tree::Exp *limit = new tree::TempExp(temp::TempFactory::NewTemp());
+  // move limit, hi
+  auto limit_init = new tree::MoveStm(limit, lo_ExpTy->exp_->UnEx());
+  // if i<=hi goto body else goto done
+  auto check_i =
+      new tree::CjumpStm(tree::LE_OP, i, limit, body_label, done_label);
+  // i = i + 1
+  auto i_plus = new tree::MoveStm(
+      i, new tree::BinopExp(tree::PLUS_OP, i, new tree::ConstExp(1)));
+  // goto test
+  auto jump_test =
+      new tree::JumpStm(new tree::NameExp(test_label),
+                        new std::vector<temp::Label *>({test_label}));
+  // 上面的一串组合
+  final_exp = new tr::NxExp(new tree::SeqStm(
+      i_init,
+      new tree::SeqStm(
+          limit_init,
+          new tree::SeqStm(
+              new tree::LabelStm(test_label),
+              new tree::SeqStm(
+                  check_i,
+                  new tree::SeqStm(
+                      new tree::LabelStm(body_label),
+                      new tree::SeqStm(
+                          body_ExpTy->exp_->UnNx(),
+                          new tree::SeqStm(
+                              i_plus, new tree::SeqStm(jump_test,
+                                                       new tree::LabelStm(
+                                                           done_label))))))))));
+
+  return new tr::ExpAndTy(final_exp, type::VoidTy::Instance());
 }
 
 tr::ExpAndTy *BreakExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
