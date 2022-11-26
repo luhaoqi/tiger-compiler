@@ -62,26 +62,106 @@ namespace tree {
 
 void SeqStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  left_->Munch(instr_list, fs);
+  right_->Munch(instr_list, fs);
 }
 
 void LabelStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  instr_list.Append(
+      new assem::LabelInstr(temp::LabelFactory::LabelString(label_), label_));
 }
 
 void JumpStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  instr_list.Append(new assem::OperInstr("jmp `j0", nullptr, nullptr,
+                                         new assem::Targets(jumps_)));
 }
 
 void CjumpStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  auto left_temp = left_->Munch(instr_list, fs);
+  auto right_temp = right_->Munch(instr_list, fs);
+  std::string opstr;
+  switch (op_) {
+      // 因为在tree的namespace不用加tree::
+    case EQ_OP:
+      opstr = "je `j0";
+      break;
+    case NE_OP:
+      opstr = "jne `j0";
+      break;
+    case LT_OP:
+      opstr = "jl `j0";
+      break;
+    case LE_OP:
+      opstr = "jle `j0";
+      break;
+    case GE_OP:
+      opstr = "jge `j0";
+      break;
+    case GT_OP:
+      opstr = "jg `j0";
+      break;
+    // 以下几个是无符号比较，不过在translate中没有，看Relop中有就写上了
+    case ULT_OP:
+      opstr = "jb `j0";
+      break;
+    case ULE_OP:
+      opstr = "jbe `j0";
+      break;
+    case UGE_OP:
+      opstr = "jae `j0";
+      break;
+    case UGT_OP:
+      opstr = "ja `j0";
+      break;
+    default:
+      assert(false);
+      break;
+  }
+  // 这边需要注意cmpq的比较顺序和cjumpstm的相反
+  instr_list.Append(new assem::OperInstr(
+      "cmpq `s1, `s0", nullptr, new temp::TempList({left_temp, right_temp}),
+      nullptr));
+  instr_list.Append(new assem::OperInstr(
+      opstr, nullptr, nullptr,
+      new assem::Targets(
+          new std::vector<temp::Label *>({true_label_, false_label_}))));
 }
 
 void MoveStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  // p.s. 如果摸鱼MemExp可以只写move `s0, (`s1)这一种情况
+  // 下面写的过程中需要注意,类似move `s0, (`s1)后面那个也是source list
+  // 因为不是写到`s1,而是写到(`s1)，没有被写的寄存器（临时变量）
+  if (typeid(*dst_) == typeid(MemExp)) {
+    // 如果destination是MemExp
+    // TODO: 根据BinOp优化
+    auto dst_mem_exp = dynamic_cast<MemExp *>(dst_);
+    assert(dst_mem_exp);
+    auto src_tmp = src_->Munch(instr_list, fs);
+    auto dst_tmp = dst_mem_exp->exp_->Munch(instr_list, fs);
+    instr_list.Append(
+        new assem::OperInstr("movq `s0, (`s1)", nullptr,
+                             new temp::TempList({src_tmp, dst_tmp}), nullptr));
+
+  } else if (typeid(*dst_) == typeid(TempExp)) {
+    // 如果destination是TempExp
+    // MOVE(TEMP(i), e2)
+    auto dst_exp = dynamic_cast<TempExp *>(dst_);
+    assert(dst_exp);
+    auto src_temp = src_->Munch(instr_list, fs);
+    instr_list.Append(new assem::MoveInstr("movq `s0 `d0",
+                                           new temp::TempList({dst_exp->temp_}),
+                                           new temp::TempList({src_temp})));
+  } else
+    assert(0);
 }
 
 void ExpStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  exp_->Munch(instr_list, fs);
 }
 
 temp::Temp *BinopExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
