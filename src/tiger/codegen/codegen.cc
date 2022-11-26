@@ -57,6 +57,7 @@ void AssemInstr::Print(FILE *out, temp::Map *map) const {
 }
 }  // namespace cg
 
+// 这里fs就是framesize，作用就是在TempExp中进行替换
 namespace tree {
 /* TODO: Put your lab5 code here */
 
@@ -124,6 +125,7 @@ void CjumpStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
   instr_list.Append(new assem::OperInstr(
       "cmpq `s1, `s0", nullptr, new temp::TempList({left_temp, right_temp}),
       nullptr));
+  // 注意这里true放在前面表示满足条件就跳转到true的位置
   instr_list.Append(new assem::OperInstr(
       opstr, nullptr, nullptr,
       new assem::Targets(
@@ -251,31 +253,132 @@ temp::Temp *BinopExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
 
 temp::Temp *MemExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  // 根据exp中的地址读取数据并存放到res中
+  temp::Temp *res = temp::TempFactory::NewTemp();
+  temp::Temp *exp_reg = exp_->Munch(instr_list, fs);
+  instr_list.Append(new assem::OperInstr("movq (`s0), `d0",
+                                         new temp::TempList({res}),
+                                         new temp::TempList(exp_reg), nullptr));
+  return res;
 }
 
 temp::Temp *TempExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  // 所有的FP都会被包裹在TempExp中出现，所以在这里进行替换
+  if (temp_ != reg_manager->FramePointer()) return temp_;
+  // 出现FP，进行替换 SP+framesize
+  // leaq xx_framesize(`s0), `d0"
+  // src:rsp dst:res
+  temp::Temp *res = temp::TempFactory::NewTemp();
+  std::string opstr = "leaq " + std::string(fs.data()) + "(`s0), `d0";
+  instr_list.Append(new assem::OperInstr(
+      opstr, new temp::TempList({res}),
+      new temp::TempList({reg_manager->StackPointer()}), nullptr));
+  return res;
 }
 
 temp::Temp *EseqExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  stm_->Munch(instr_list, fs);
+  return exp_->Munch(instr_list, fs);
 }
 
 temp::Temp *NameExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  temp::Temp *res = temp::TempFactory::NewTemp();
+  // 执行重定位时，由于是相对寻址，Label代表的是与PC的偏移量，因此直接获取Label的值需要加上%rip
+  // symbol(%rip): Points to the symbol in RIP relative way
+  // https://sourceware.org/binutils/docs/as/i386_002dMemory.html
+  // https://stackoverflow.com/questions/3250277/how-to-use-rip-relative-addressing-in-a-64-bit-assembly-program
+  // 貌似mov name, `d0是一样的效果
+  // "leaq name(%rip), `d0"
+  std::string str =
+      "leaq " + temp::LabelFactory::LabelString(name_) + "(%rip), `d0";
+  instr_list.Append(
+      new assem::OperInstr(str, new temp::TempList({res}), nullptr, nullptr));
+  return res;
 }
 
 temp::Temp *ConstExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  // "movq $imm, `d0"
+  temp::Temp *res = temp::TempFactory::NewTemp();
+  instr_list.Append(
+      new assem::OperInstr("movq $" + std::to_string(consti_) + ", `d0",
+                           new temp::TempList({res}), nullptr, nullptr));
+  return res;
 }
 
 temp::Temp *CallExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  temp::Temp *res = temp::TempFactory::NewTemp();
+  // MunchArgs生成将所有参数传送到正确位置的代码，并返回对应的寄存器
+  temp::TempList *args = args_->MunchArgs(instr_list, fs);
+
+  // CallExp的fun必须是个NameExp
+  // 这里也是NameExp唯一用到的地方，jumpStm里面是不管的
+  if (typeid(fun_) != typeid(NameExp)) {
+    assert(0);
+    return nullptr;
+  }
+  auto fun_NameExp = dynamic_cast<NameExp *>(fun_);
+  auto fun_name = fun_NameExp->name_;
+  // callq fun_name
+  // call的src由MunchArgs得出
+  // call的dst由CallerSaved+RV组成，保守估计
+  auto dst_temp_list = reg_manager->CallerSaves();
+  dst_temp_list->Append(reg_manager->ReturnValue());
+  instr_list.Append(
+      new assem::OperInstr("callq " + temp::LabelFactory::LabelString(fun_name),
+                           dst_temp_list, args, nullptr));
+  // 把rax转移到res中，如果寄存器分配顺利的话可以直接把res替换成rax
+  instr_list.Append(
+      new assem::MoveInstr("movq `s0, `d0", new temp::TempList({res}),
+                           new temp::TempList({reg_manager->ReturnValue()})));
+  return res;
 }
 
 temp::TempList *ExpList::MunchArgs(assem::InstrList &instr_list,
                                    std::string_view fs) {
   /* TODO: Put your lab5 code here */
+  // 参考setViewShift
+  // res存储用到的放在寄存器中的参数对应的寄存器
+  auto res = new temp::TempList();
+  int ws = reg_manager->WordSize();
+  const auto &arg_regs = reg_manager->ArgRegs()->GetList();
+  // 遍历用作参数的寄存器列表，把用到的加入res
+  auto it = arg_regs.begin();
+  bool reg_over = false;
+
+  int i = 0;
+
+  const auto &exp_list = GetList();
+  for (tree::Exp *exp : exp_list) {
+    temp::Temp *arg_reg = exp->Munch(instr_list, fs);
+    if (!reg_over) {
+      // movq arg_reg, *it
+      instr_list.Append(new assem::MoveInstr("movq `s0, `d0",
+                                             new temp::TempList({*it}),
+                                             new temp::TempList({arg_reg})));
+      res->Append(*it);
+
+      it++;
+      if (it == arg_regs.end()) {
+        reg_over = true;
+      }
+    } else {
+      // movq arg_reg, offset(SP)  //offset = i*wordsizes
+      // 进入函数的时候rsp已经减去了考虑会call的最大参数量的framesize
+      // 现在rsp上方的空间就是剩下给超过6个参数的函数来存放参数的
+      // 第7个就放在rsp开始向上一个wordsize的位置
+      std::string str = "movq `s0, " + std::to_string(i * ws) + "(`s1)";
+      instr_list.Append(new assem::OperInstr(
+          str, nullptr,
+          new temp::TempList({arg_reg, reg_manager->StackPointer()}), nullptr));
+      i++;
+    }
+  }
+  return res;
 }
 
 }  // namespace tree
