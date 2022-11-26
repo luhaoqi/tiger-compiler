@@ -92,6 +92,40 @@ assem::InstrList* FrameFactory::ProcEntryExit2(assem::InstrList* body) {
   return body;
 }
 
+assem::Proc* FrameFactory::ProcEntryExit3(frame::Frame* f,
+                                          assem::InstrList* body) {
+  static char instr[1024];
+
+  // 原来需要把rbp压入栈，并把rsp赋给rbp作为FP
+  // 现在记录一个framesize，FP = SP + framesize
+  // 显然framesize = -offset (因为offset是负数，每次申请-wordsize)
+  // 需要注意的是如果这个frame内部有call并且参数超过6个(或者说参数传递寄存器的个数)
+  // 就需要额外再大一些,为size_for_more_args - offset
+
+  int argRegs = reg_manager->ArgRegs()->GetList().size();
+  int size_for_more_args =
+      std::max(f->maxArgs - argRegs, 0) * reg_manager->WordSize();
+
+  std::string prolog;
+  // .set xx_framesize, $size
+  sprintf(instr, ".set %s_framesize, %d\n", f->name_->Name().c_str(),
+          -f->offset);
+  prolog = std::string(instr);
+  // xx:
+  sprintf(instr, "%s:\n", f->name_->Name().c_str());
+  prolog.append(std::string(instr));
+  // subq $size, %rsp
+  sprintf(instr, "subq $%d, %%rsp\n", size_for_more_args - f->offset);
+  prolog.append(std::string(instr));
+
+  // addq $size, %rsp
+  sprintf(instr, "addq $%d, %%rsp\n", size_for_more_args - f->offset);
+  std::string epilog = std::string(instr);
+  // retq
+  epilog.append(std::string("retq\n"));
+  return new assem::Proc(prolog, body, epilog);
+}
+
 tree::Exp* FrameFactory::externalCall(temp::Label* name, tree::ExpList* args) {
   return new tree::CallExp(new tree::NameExp(name), args);
 }

@@ -14,28 +14,25 @@ void AssemGen::GenAssem(bool need_ra) {
   // Output proc
   phase = frame::Frag::Proc;
   fprintf(out_, ".text\n");
-  for (auto &&frag : frags->GetList())
-    frag->OutputAssem(out_, phase, need_ra);
+  for (auto &&frag : frags->GetList()) frag->OutputAssem(out_, phase, need_ra);
 
   // Output string
   phase = frame::Frag::String;
   fprintf(out_, ".section .rodata\n");
-  for (auto &&frag : frags->GetList())
-    frag->OutputAssem(out_, phase, need_ra);
+  for (auto &&frag : frags->GetList()) frag->OutputAssem(out_, phase, need_ra);
 }
 
-} // namespace output
+}  // namespace output
 
 namespace frame {
 
 void ProcFrag::OutputAssem(FILE *out, OutputPhase phase, bool need_ra) const {
   std::unique_ptr<canon::Traces> traces;
   std::unique_ptr<cg::AssemInstr> assem_instr;
-//   std::unique_ptr<ra::Result> allocation;
+  //   std::unique_ptr<ra::Result> allocation;
 
   // When generating proc fragment, do not output string assembly
-  if (phase != Proc)
-    return;
+  if (phase != Proc) return;
 
   TigerLog("-------====IR tree=====-----\n");
   TigerLog(body_);
@@ -63,7 +60,8 @@ void ProcFrag::OutputAssem(FILE *out, OutputPhase phase, bool need_ra) const {
     traces = canon.TransferTraces();
   }
 
-  temp::Map *color = temp::Map::LayerMap(reg_manager->temp_map_, temp::Map::Name());
+  temp::Map *color =
+      temp::Map::LayerMap(reg_manager->temp_map_, temp::Map::Name());
   {
     // Lab 5: code generation
     TigerLog("-------====Code generate=====-----\n");
@@ -74,22 +72,23 @@ void ProcFrag::OutputAssem(FILE *out, OutputPhase phase, bool need_ra) const {
   }
 
   assem::InstrList *il = assem_instr.get()->GetInstrList();
-  
-//   if (need_ra) {
-//     // Lab 6: register allocation
-//     TigerLog("----====Register allocate====-----\n");
-//     ra::RegAllocator reg_allocator(frame_, std::move(assem_instr));
-//     reg_allocator.RegAlloc();
-//     allocation = reg_allocator.TransferResult();
-//     il = allocation->il_;
-//     color = temp::Map::LayerMap(reg_manager->temp_map_, allocation->coloring_);
-//   }
+
+  //   if (need_ra) {
+  //     // Lab 6: register allocation
+  //     TigerLog("----====Register allocate====-----\n");
+  //     ra::RegAllocator reg_allocator(frame_, std::move(assem_instr));
+  //     reg_allocator.RegAlloc();
+  //     allocation = reg_allocator.TransferResult();
+  //     il = allocation->il_;
+  //     color = temp::Map::LayerMap(reg_manager->temp_map_,
+  //     allocation->coloring_);
+  //   }
 
   TigerLog("-------====Output assembly for %s=====-----\n",
            frame_->name_->Name().data());
 
-  assem::Proc *proc = frame::ProcEntryExit3(frame_, il);
-  
+  assem::Proc *proc = frame::FrameFactory::ProcEntryExit3(frame_, il);
+
   std::string proc_name = frame_->GetLabel();
 
   fprintf(out, ".globl %s\n", proc_name.data());
@@ -105,8 +104,7 @@ void ProcFrag::OutputAssem(FILE *out, OutputPhase phase, bool need_ra) const {
 
 void StringFrag::OutputAssem(FILE *out, OutputPhase phase, bool need_ra) const {
   // When generating string fragment, do not output proc assembly
-  if (phase != String)
-    return;
+  if (phase != String) return;
 
   fprintf(out, "%s:\n", label_->Name().data());
   int length = static_cast<int>(str_.size());
@@ -127,4 +125,4 @@ void StringFrag::OutputAssem(FILE *out, OutputPhase phase, bool need_ra) const {
   }
   fprintf(out, "\"\n");
 }
-} // namespace frame
+}  // namespace frame

@@ -90,6 +90,10 @@ class Frame {
 
   virtual Access *allocLocal(bool escape) = 0;
   virtual void setViewShift(const std::list<bool> &escapes) = 0;
+
+  [[nodiscard]] std::string GetLabel() const {
+    return temp::LabelFactory::LabelString(name_);
+  }
 };
 
 // Frame 工厂类，用来构造Frame
@@ -98,6 +102,7 @@ class FrameFactory {
   static Frame *NewFrame(temp::Label *label, const std::list<bool> &formals);
   static tree::Stm *ProcEntryExit1(Frame *f, tree::Stm *stm);
   static assem::InstrList *ProcEntryExit2(assem::InstrList *body);
+  static assem::Proc *ProcEntryExit3(frame::Frame *f, assem::InstrList *body);
   static tree::Exp *externalCall(temp::Label *name, tree::ExpList *args);
 
  private:
