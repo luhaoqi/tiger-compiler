@@ -228,6 +228,20 @@ X64RegManager::X64RegManager() : RegManager() {
 }
 
 /**
+ * Get operative registers
+ * @return operative registers
+ */
+[[nodiscard]] temp::TempList* X64RegManager::OperateRegs() {
+  // binop操作相关
+  // 主要是imul和idiv
+  // rax和rdx
+  auto temp_list = new temp::TempList();
+  temp_list->Append(GetRegister(RegisterName::rax));  //%rax
+  temp_list->Append(GetRegister(RegisterName::rdx));  //%rdx
+  return temp_list;
+}
+
+/**
  * Get word size
  */
 int X64RegManager::WordSize() { return 8; }

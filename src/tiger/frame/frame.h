@@ -51,6 +51,8 @@ class RegManager {
    */
   [[nodiscard]] virtual temp::TempList *ReturnSink() = 0;
 
+  [[nodiscard]] virtual temp::TempList *OperateRegs() = 0;
+
   /**
    * Get word size
    */

@@ -37,6 +37,7 @@ class X64RegManager : public RegManager {
   temp::TempList* CallerSaves();
   temp::TempList* CalleeSaves();
   temp::TempList* ReturnSink();
+  temp::TempList* OperateRegs();
   int WordSize();
   temp::Temp* FramePointer();
   temp::Temp* StackPointer();

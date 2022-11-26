@@ -165,7 +165,88 @@ void ExpStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
 }
 
 temp::Temp *BinopExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
+  // 在这里要尤其注意操作的dst和src，用于活跃分析
   /* TODO: Put your lab5 code here */
+  temp::Temp *left = left_->Munch(instr_list, fs);
+  temp::Temp *right = right_->Munch(instr_list, fs);
+  temp::Temp *res = temp::TempFactory::NewTemp();
+  // reference: https://blog.csdn.net/Chauncyxu/article/details/121890457
+  // 注意看清楚乘法和除法的细节,用到rax和rdx
+  switch (op_) {
+    case PLUS_OP:
+      // 先把left移到res 因为 addq a, b <=> b=a+b
+      instr_list.Append(new assem::MoveInstr("movq `s0, `d0",
+                                             new temp::TempList({res}),
+                                             new temp::TempList({left})));
+      // res是隐藏的(implicit)src
+      // 考虑res=res+right 左边是dst右边是src
+      // 计算完了以后res里存的是加起来的和
+      // 这里的src和dst在后面用来做活跃分析
+      instr_list.Append(
+          new assem::OperInstr("addq `s0, `d0", new temp::TempList({res}),
+                               new temp::TempList({right, res}), nullptr));
+      break;
+    case MINUS_OP:
+      // 减法与加法基本一致
+      instr_list.Append(new assem::MoveInstr("movq `s0, `d0",
+                                             new temp::TempList({res}),
+                                             new temp::TempList({left})));
+      instr_list.Append(
+          new assem::OperInstr("subq `s0, `d0", new temp::TempList({res}),
+                               new temp::TempList({right, res}), nullptr));
+      break;
+    case MUL_OP:
+      // R[%rdx]:R[%rax]<-S×R[%rax] 有符号乘法
+      // 将left移动到%rax里，这里returnValue指代%rax
+      instr_list.Append(new assem::MoveInstr(
+          "movq `s0, `d0", new temp::TempList({reg_manager->ReturnValue()}),
+          new temp::TempList({left})));
+
+      // 将right作为imulq的参数，它会与%rax做乘法，并将结果存放在%rax和%rdx中
+      // 等价于 R[%rdx]:R[%rax] = S * R[%rax]
+      // src: S, rax; dst:rax,rdx
+      instr_list.Append(new assem::OperInstr(
+          "imulq `s0", reg_manager->OperateRegs(),
+          new temp::TempList({right, reg_manager->ReturnValue()}), nullptr));
+
+      // 最后把%rax移动到reg中,这里只取64位，多的就算溢出了
+      instr_list.Append(new assem::MoveInstr(
+          "movq `s0, `d0", new temp::TempList({res}),
+          new temp::TempList({reg_manager->ReturnValue()})));
+      break;
+    case DIV_OP:
+      // cqto
+      // R[%rdx]:R[%rax]←符号扩展(R[%rax])
+      // idivq S
+      // R[%rdx]←R[%rdx]:R[%rax] mod S
+      // R[%rax]←R[%rdx]:R[%rax] ÷ S
+
+      // 移动left到%rax 同乘法
+      instr_list.Append(new assem::MoveInstr(
+          "movq `s0, `d0", new temp::TempList({reg_manager->ReturnValue()}),
+          new temp::TempList({left})));
+
+      // cqto进行扩展，直接把rax的符号位复制到rdx
+      // dst:rax,rdx src:rax
+      instr_list.Append(new assem::OperInstr(
+          "cqto", reg_manager->OperateRegs(),
+          new temp::TempList({reg_manager->ReturnValue()}), nullptr));
+
+      // 将右值作为idivq的参数，它是除数与%rax相除，并将商和余数存放在%rax和%rdx中
+      // 这里被修改的reg是rax和rdx，被读取的是right
+      instr_list.Append(
+          new assem::OperInstr("idivq `s0", reg_manager->OperateRegs(),
+                               new temp::TempList({right}), nullptr));
+
+      // movq %rax, res
+      instr_list.Append(new assem::MoveInstr(
+          "movq `s0, `d0", new temp::TempList({res}),
+          new temp::TempList({reg_manager->ReturnValue()})));
+      break;
+    default:
+      assert(0);
+      break;
+  }
 }
 
 temp::Temp *MemExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
