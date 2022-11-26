@@ -85,6 +85,13 @@ tree::Stm* FrameFactory::ProcEntryExit1(Frame* f, tree::Stm* stm) {
   return new tree::SeqStm(f->view_shift, stm);
 }
 
+// 添加下沉指令(Sink instr), 表示一些寄存器是出口活跃的
+assem::InstrList* FrameFactory::ProcEntryExit2(assem::InstrList* body) {
+  body->Append(new assem::OperInstr("", new temp::TempList(),
+                                    reg_manager->ReturnSink(), nullptr));
+  return body;
+}
+
 tree::Exp* FrameFactory::externalCall(temp::Label* name, tree::ExpList* args) {
   return new tree::CallExp(new tree::NameExp(name), args);
 }

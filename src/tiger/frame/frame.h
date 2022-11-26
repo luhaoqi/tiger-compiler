@@ -97,6 +97,7 @@ class FrameFactory {
  public:
   static Frame *NewFrame(temp::Label *label, const std::list<bool> &formals);
   static tree::Stm *ProcEntryExit1(Frame *f, tree::Stm *stm);
+  static assem::InstrList *ProcEntryExit2(assem::InstrList *body);
   static tree::Exp *externalCall(temp::Label *name, tree::ExpList *args);
 
  private:
