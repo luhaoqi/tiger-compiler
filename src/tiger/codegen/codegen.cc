@@ -334,10 +334,12 @@ temp::Temp *NameExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   // symbol(%rip): Points to the symbol in RIP relative way
   // https://sourceware.org/binutils/docs/as/i386_002dMemory.html
   // https://stackoverflow.com/questions/3250277/how-to-use-rip-relative-addressing-in-a-64-bit-assembly-program
-  // 貌似mov name, `d0是一样的效果
+  // 貌似mov name, `d0是一样的效果  (p.s: NO！)
   // "leaq name(%rip), `d0"
   std::string str =
       "leaq " + temp::LabelFactory::LabelString(name_) + "(%rip), `d0";
+  // 经测试，这样的写法过不了测试
+  // "movq " + temp::LabelFactory::LabelString(name_) + ", `d0";
   instr_list.Append(
       new assem::OperInstr(str, new temp::TempList({res}), nullptr, nullptr));
   return res;
