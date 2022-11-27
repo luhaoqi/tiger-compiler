@@ -318,7 +318,7 @@ temp::Temp *CallExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
 
   // CallExp的fun必须是个NameExp
   // 这里也是NameExp唯一用到的地方，jumpStm里面是不管的
-  if (typeid(fun_) != typeid(NameExp)) {
+  if (typeid(*fun_) != typeid(NameExp)) {
     assert(0);
     return nullptr;
   }
