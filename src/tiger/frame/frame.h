@@ -87,7 +87,8 @@ class Frame {
   tree::Stm *view_shift;
   int maxArgs;  // frame代表的函数作为caller时调用的函数的最大参数，用于决定frame的size
 
-  explicit Frame(temp::Label *name) : name_(name), offset(0), maxArgs(0) {}
+  explicit Frame(temp::Label *name)
+      : name_(name), offset(0), maxArgs(0), view_shift(nullptr) {}
   void update_maxArgs(int x) { maxArgs = x > maxArgs ? x : maxArgs; }
 
   virtual Access *allocLocal(bool escape) = 0;
