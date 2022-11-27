@@ -153,7 +153,7 @@ ProgTr::ProgTr(std::unique_ptr<absyn::AbsynTree> absyn_tree,
       venv_(std::make_unique<env::VEnv>()) {
   // total goal: 还需要初始化 main_level
   // 1. 初始化main_label 使用NamedLabel自定义label
-  temp::Label *main_label = temp::LabelFactory::NamedLabel("__tigermain__");
+  temp::Label *main_label = temp::LabelFactory::NamedLabel("tigermain");
   // 2. 初始化main_frame
   frame::Frame *main_frame = frame::FrameFactory::NewFrame(main_label, {});
   // 3. 初始化main_level_
@@ -171,7 +171,7 @@ void ProgTr::Translate() {
   FillBaseTEnv();
   auto main_ExpTy = absyn_tree_->Translate(
       venv_.get(), tenv_.get(), main_level_.get(),
-      temp::LabelFactory::NamedLabel("__tigermain__"), errormsg_.get());
+      temp::LabelFactory::NamedLabel("tigermain"), errormsg_.get());
   // save code
   frags->PushBack(
       new frame::ProcFrag(main_ExpTy->exp_->UnNx(), main_level_->frame_));

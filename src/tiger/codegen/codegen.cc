@@ -154,7 +154,7 @@ void MoveStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
     auto dst_exp = dynamic_cast<TempExp *>(dst_);
     assert(dst_exp);
     auto src_temp = src_->Munch(instr_list, fs);
-    instr_list.Append(new assem::MoveInstr("movq `s0 `d0",
+    instr_list.Append(new assem::MoveInstr("movq `s0, `d0",
                                            new temp::TempList({dst_exp->temp_}),
                                            new temp::TempList({src_temp})));
   } else
