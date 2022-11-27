@@ -723,7 +723,7 @@ tr::ExpAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   // 循环的上界存到一个寄存器，否则如果很复杂的话每次重复计算性能开销很大
   tree::Exp *limit = new tree::TempExp(temp::TempFactory::NewTemp());
   // move limit, hi
-  auto limit_init = new tree::MoveStm(limit, lo_ExpTy->exp_->UnEx());
+  auto limit_init = new tree::MoveStm(limit, hi_ExpTy->exp_->UnEx());
   // if i<=hi goto body else goto done
   auto check_i =
       new tree::CjumpStm(tree::LE_OP, i, limit, body_label, done_label);
