@@ -707,14 +707,10 @@ tr::ExpAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
 
   venv->EndScope();
 
-  // move i, lo
-  // move limit, hi
-  // test: if i<=hi goto body else goto done
-  // body: (bodyExp); i = i + 1; goto test
-  // done:
   tr::Exp *final_exp;
   temp::Label *body_label = temp::LabelFactory::NewLabel();
   temp::Label *test_label = temp::LabelFactory::NewLabel();
+  temp::Label *increase_label = temp::LabelFactory::NewLabel();
   // 获取循环变量i的表达式，用ToExp因为可能在frame也可能在reg
   tree::Exp *i =
       access->access_->ToExp(new tree::TempExp(reg_manager->FramePointer()));
@@ -724,9 +720,12 @@ tr::ExpAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   tree::Exp *limit = new tree::TempExp(temp::TempFactory::NewTemp());
   // move limit, hi
   auto limit_init = new tree::MoveStm(limit, hi_ExpTy->exp_->UnEx());
-  // if i<=hi goto body else goto done
-  auto check_i =
+  // if i<=limit goto body else goto done
+  auto check_i_LE_limit =
       new tree::CjumpStm(tree::LE_OP, i, limit, body_label, done_label);
+  // if i>=limit goto body else goto done
+  auto check_i_GE_limit =
+      new tree::CjumpStm(tree::GE_OP, i, limit, done_label, increase_label);
   // i = i + 1
   auto i_plus = new tree::MoveStm(
       i, new tree::BinopExp(tree::PLUS_OP, i, new tree::ConstExp(1)));
@@ -735,6 +734,13 @@ tr::ExpAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
       new tree::JumpStm(new tree::NameExp(test_label),
                         new std::vector<temp::Label *>({test_label}));
   // 上面的一串组合
+  // move i, lo
+  // move limit, hi
+  // test: if i<=limit goto body else goto done
+  // body: (bodyExp);
+  // if i>=limit goto done else goto increase
+  // increase: i = i + 1; goto test
+  // done:
   final_exp = new tr::NxExp(new tree::SeqStm(
       i_init,
       new tree::SeqStm(
@@ -742,15 +748,20 @@ tr::ExpAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
           new tree::SeqStm(
               new tree::LabelStm(test_label),
               new tree::SeqStm(
-                  check_i,
+                  check_i_LE_limit,
                   new tree::SeqStm(
                       new tree::LabelStm(body_label),
                       new tree::SeqStm(
                           body_ExpTy->exp_->UnNx(),
                           new tree::SeqStm(
-                              i_plus, new tree::SeqStm(jump_test,
-                                                       new tree::LabelStm(
-                                                           done_label))))))))));
+                              check_i_GE_limit,
+                              new tree::SeqStm(
+                                  new tree::LabelStm(increase_label),
+                                  new tree::SeqStm(
+                                      i_plus,
+                                      new tree::SeqStm(
+                                          jump_test, new tree::LabelStm(
+                                                         done_label))))))))))));
 
   return new tr::ExpAndTy(final_exp, type::VoidTy::Instance());
 }
