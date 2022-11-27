@@ -478,7 +478,10 @@ void FunctionDec::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     }
 
     // 执行body
-    type::Ty *ty = fun->body_->SemAnalyze(venv, tenv, labelcount, errormsg);
+    // type::Ty *ty = fun->body_->SemAnalyze(venv, tenv, labelcount, errormsg);
+    // 注意：进入一个新的函数labelcount应该重新置为0，函数里面怎么能break到外面呢
+    type::Ty *ty = fun->body_->SemAnalyze(venv, tenv, 0, errormsg);
+
     // 从venv中找出预先填入的函数声明（不是为了补充定义）
     // 需要知道的事函数事先扫一遍是为了全部声明好执行body
     // 这里检查返回类型是否匹配
