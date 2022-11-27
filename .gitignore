@@ -33,3 +33,6 @@ _deps
 .DS_Store
 *.log
 
+#python
+scripts/lab5_test/__pycache__
+

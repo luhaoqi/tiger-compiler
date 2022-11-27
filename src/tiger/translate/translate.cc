@@ -387,15 +387,43 @@ tr::ExpAndTy *OpExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   } else {
     // 数值操作
     tree::CjumpStm *stm = nullptr;  // 关系运算
-    tree::BinopExp *exp = nullptr;  // 数值运算
+    tree::Exp *exp = nullptr;       // 数值运算
 
     switch (oper_) {
         // & | + - * /
       case AND_OP:
-        exp = new tree::BinopExp(tree::BinOp::AND_OP, left, right);
+        // 仿照 OR_OP
+        {
+          temp::Label *z = temp::LabelFactory::NewLabel();
+          tree::CjumpStm *s1 = new tree::CjumpStm(
+              tree::NE_OP, left, new tree::ConstExp(0), z, nullptr);
+          tree::CjumpStm *s2 = new tree::CjumpStm(
+              tree::NE_OP, right, new tree::ConstExp(0), nullptr, nullptr);
+          tree::Stm *s =
+              new tree::SeqStm(s1, new tree::SeqStm(new tree::LabelStm(z), s2));
+          tr::PatchList trues = tr::PatchList({&s2->true_label_});
+          tr::PatchList falses =
+              tr::PatchList({&s1->false_label_, &s2->false_label_});
+          op_exp = new tr::CxExp(trues, falses, s);
+        }
+        // exp = new tree::BinopExp(tree::BinOp::AND_OP, left, right);
         break;
       case OR_OP:
-        exp = new tree::BinopExp(tree::BinOp::OR_OP, left, right);
+        // 参考PPT例子
+        {
+          temp::Label *z = temp::LabelFactory::NewLabel();
+          tree::CjumpStm *s1 = new tree::CjumpStm(
+              tree::NE_OP, left, new tree::ConstExp(0), nullptr, z);
+          tree::CjumpStm *s2 = new tree::CjumpStm(
+              tree::NE_OP, right, new tree::ConstExp(0), nullptr, nullptr);
+          tree::Stm *s =
+              new tree::SeqStm(s1, new tree::SeqStm(new tree::LabelStm(z), s2));
+          tr::PatchList trues =
+              tr::PatchList({&s1->true_label_, &s2->true_label_});
+          tr::PatchList falses = tr::PatchList({&s2->false_label_});
+          op_exp = new tr::CxExp(trues, falses, s);
+        }
+        // exp = new tree::BinopExp(tree::BinOp::OR_OP, left, right);
         break;
       case PLUS_OP:
         exp = new tree::BinopExp(tree::BinOp::PLUS_OP, left, right);
@@ -443,9 +471,10 @@ tr::ExpAndTy *OpExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
       tr::PatchList t({&(stm->true_label_)}), f({&(stm->false_label_)});
       op_exp = new tr::CxExp(t, f, stm);
     } else if (exp) {
+      // 加减乘除
       op_exp = new tr::ExExp(exp);
-    }
-    assert(false);
+    } else  // 否则就是 & 和 | 已经有op_exp
+      assert(op_exp);
   }
   return new tr::ExpAndTy(op_exp, type::IntTy::Instance());
 }
