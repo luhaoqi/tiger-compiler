@@ -142,6 +142,49 @@ void MoveStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
     // TODO: 根据BinOp优化
     auto dst_mem_exp = dynamic_cast<MemExp *>(dst_);
     assert(dst_mem_exp);
+
+    // 如果MEM内部是加法运算，可以优化指令，而且这种情况很常见
+    if (typeid(dst_mem_exp->exp_) == typeid(BinopExp *)) {
+      auto binop_exp = dynamic_cast<BinopExp *>(dst_mem_exp->exp_);
+      assert(binop_exp);
+      // 只支持对加法优化，其实减法也是一样的操作，只是减法的情况比较少
+      if (binop_exp->op_ == PLUS_OP) {
+        // 取出左右操作数
+        auto left_exp = binop_exp->left_;
+        auto right_exp = binop_exp->right_;
+        int x;
+        tree::Exp *e1 = nullptr;
+
+        if (typeid(right_exp) == typeid(ConstExp *)) {
+          // MOVE(MEM(+(e1, CONST(x)), e2)
+          auto const_exp = dynamic_cast<ConstExp *>(right_exp);
+          x = const_exp->consti_;
+          e1 = left_exp;
+        } else if (typeid(left_exp) == typeid(ConstExp *)) {
+          // MOVE(MEM(+(CONST(x), e1), e2)
+          auto const_exp = dynamic_cast<ConstExp *>(left_exp);
+          x = const_exp->consti_;
+          e1 = right_exp;
+        }
+
+        if (e1) {
+          // 只要e1不是nullptr，那么就说明有一个是ConstExp，可以优化指令
+          // e1表示的是另外一个需要Munch的表达式
+          // 此时dst是 x(e1) src是src_->Munch(...)
+          // 需要注意Instr中的dst是空，因为没有寄存器被写入
+          auto e1_reg = e1->Munch(instr_list, fs);
+          auto src_reg = src_->Munch(instr_list, fs);
+
+          // movq src, x(e1)
+          instr_list.Append(new assem::OperInstr(
+              "movq `s0, " + std::to_string(x) + "(`s1)", nullptr,
+              new temp::TempList({src_reg, e1_reg}), nullptr));
+          // 这种情况结束就可以退出
+          return;
+        }
+      }
+    }
+
     auto src_tmp = src_->Munch(instr_list, fs);
     auto dst_tmp = dst_mem_exp->exp_->Munch(instr_list, fs);
     instr_list.Append(
