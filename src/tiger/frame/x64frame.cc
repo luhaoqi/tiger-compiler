@@ -195,6 +195,7 @@ X64RegManager::X64RegManager() : RegManager() {
   temp_list->Append(GetRegister(RegisterName::r9));   //%r9
   temp_list->Append(GetRegister(RegisterName::r10));  //%r10
   temp_list->Append(GetRegister(RegisterName::r11));  //%r11
+  return temp_list;
 }
 
 /**

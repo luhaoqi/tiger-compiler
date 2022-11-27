@@ -329,9 +329,9 @@ temp::Temp *CallExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   // call的dst由CallerSaved+RV组成，保守估计
   auto dst_temp_list = reg_manager->CallerSaves();
   dst_temp_list->Append(reg_manager->ReturnValue());
-  instr_list.Append(
-      new assem::OperInstr("callq " + temp::LabelFactory::LabelString(fun_name),
-                           dst_temp_list, args, nullptr));
+  instr_list.Append(new assem::OperInstr(
+      std::string("callq ") + temp::LabelFactory::LabelString(fun_name),
+      dst_temp_list, args, nullptr));
   // 把rax转移到res中，如果寄存器分配顺利的话可以直接把res替换成rax
   instr_list.Append(
       new assem::MoveInstr("movq `s0, `d0", new temp::TempList({res}),
