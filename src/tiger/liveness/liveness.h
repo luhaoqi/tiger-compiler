@@ -60,6 +60,7 @@ private:
   fg::FGraphPtr flowgraph_;
   LiveGraph live_graph_;
 
+  // 分别表示 in[] out[] 数组
   std::unique_ptr<graph::Table<assem::Instr, temp::TempList>> in_;
   std::unique_ptr<graph::Table<assem::Instr, temp::TempList>> out_;
   tab::Table<temp::Temp, INode> *temp_node_map_;

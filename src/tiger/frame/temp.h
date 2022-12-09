@@ -4,6 +4,7 @@
 #include "tiger/symbol/symbol.h"
 
 #include <list>
+#include <set>
 
 namespace temp {
 
@@ -67,7 +68,8 @@ public:
   void Append(Temp *t) { temp_list_.push_back(t); }
   [[nodiscard]] Temp *NthTemp(int i) const;
   [[nodiscard]] const std::list<Temp *> &GetList() const { return temp_list_; }
-
+  // used in liveness analysis, change temp_list_ to new_list
+  void assign(const std::set<Temp *> &s);
 private:
   std::list<Temp *> temp_list_;
 };
