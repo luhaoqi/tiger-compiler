@@ -9,7 +9,7 @@ namespace {
 
 constexpr int maxlen = 1024;
 
-}  // namespace
+} // namespace
 
 namespace cg {
 
@@ -52,10 +52,11 @@ void CodeGen::Codegen() {
 }
 
 void AssemInstr::Print(FILE *out, temp::Map *map) const {
-  for (auto instr : instr_list_->GetList()) instr->Print(out, map);
+  for (auto instr : instr_list_->GetList())
+    instr->Print(out, map);
   fprintf(out, "\n");
 }
-}  // namespace cg
+} // namespace cg
 
 // 这里fs就是framesize，作用就是在TempExp中进行替换
 namespace tree {
@@ -85,51 +86,51 @@ void CjumpStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
   auto right_temp = right_->Munch(instr_list, fs);
   std::string opstr;
   switch (op_) {
-      // 因为在tree的namespace不用加tree::
-    case EQ_OP:
-      opstr = "je `j0";
-      break;
-    case NE_OP:
-      opstr = "jne `j0";
-      break;
-    case LT_OP:
-      opstr = "jl `j0";
-      break;
-    case LE_OP:
-      opstr = "jle `j0";
-      break;
-    case GE_OP:
-      opstr = "jge `j0";
-      break;
-    case GT_OP:
-      opstr = "jg `j0";
-      break;
-    // 以下几个是无符号比较，不过在translate中没有，看Relop中有就写上了
-    case ULT_OP:
-      opstr = "jb `j0";
-      break;
-    case ULE_OP:
-      opstr = "jbe `j0";
-      break;
-    case UGE_OP:
-      opstr = "jae `j0";
-      break;
-    case UGT_OP:
-      opstr = "ja `j0";
-      break;
-    default:
-      assert(false);
-      break;
+    // 因为在tree的namespace不用加tree::
+  case EQ_OP:
+    opstr = "je `j0";
+    break;
+  case NE_OP:
+    opstr = "jne `j0";
+    break;
+  case LT_OP:
+    opstr = "jl `j0";
+    break;
+  case LE_OP:
+    opstr = "jle `j0";
+    break;
+  case GE_OP:
+    opstr = "jge `j0";
+    break;
+  case GT_OP:
+    opstr = "jg `j0";
+    break;
+  // 以下几个是无符号比较，不过在translate中没有，看Relop中有就写上了
+  case ULT_OP:
+    opstr = "jb `j0";
+    break;
+  case ULE_OP:
+    opstr = "jbe `j0";
+    break;
+  case UGE_OP:
+    opstr = "jae `j0";
+    break;
+  case UGT_OP:
+    opstr = "ja `j0";
+    break;
+  default:
+    assert(false);
+    break;
   }
   // 这边需要注意cmpq的比较顺序和cjumpstm的相反
   instr_list.Append(new assem::OperInstr(
       "cmpq `s1, `s0", nullptr, new temp::TempList({left_temp, right_temp}),
       nullptr));
   // 注意这里true放在前面表示满足条件就跳转到true的位置
-  instr_list.Append(new assem::OperInstr(
-      opstr, nullptr, nullptr,
-      new assem::Targets(
-          new std::vector<temp::Label *>({true_label_, false_label_}))));
+  instr_list.Append(
+      new assem::OperInstr(opstr, nullptr, nullptr,
+                           new assem::Targets(new std::vector<temp::Label *>(
+                               {true_label_, false_label_}))));
 }
 
 void MoveStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
@@ -144,7 +145,7 @@ void MoveStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
     assert(dst_mem_exp);
 
     // 如果MEM内部是加法运算，可以优化指令，而且这种情况很常见
-    if (typeid(dst_mem_exp->exp_) == typeid(BinopExp *)) {
+    if (typeid(*dst_mem_exp->exp_) == typeid(BinopExp)) {
       auto binop_exp = dynamic_cast<BinopExp *>(dst_mem_exp->exp_);
       assert(binop_exp);
       // 只支持对加法优化，其实减法也是一样的操作，只是减法的情况比较少
@@ -155,12 +156,12 @@ void MoveStm::Munch(assem::InstrList &instr_list, std::string_view fs) {
         int x;
         tree::Exp *e1 = nullptr;
 
-        if (typeid(right_exp) == typeid(ConstExp *)) {
+        if (typeid(*right_exp) == typeid(ConstExp)) {
           // MOVE(MEM(+(e1, CONST(x)), e2)
           auto const_exp = dynamic_cast<ConstExp *>(right_exp);
           x = const_exp->consti_;
           e1 = left_exp;
-        } else if (typeid(left_exp) == typeid(ConstExp *)) {
+        } else if (typeid(*left_exp) == typeid(ConstExp)) {
           // MOVE(MEM(+(CONST(x), e1), e2)
           auto const_exp = dynamic_cast<ConstExp *>(left_exp);
           x = const_exp->consti_;
@@ -218,79 +219,79 @@ temp::Temp *BinopExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   // reference: https://blog.csdn.net/Chauncyxu/article/details/121890457
   // 注意看清楚乘法和除法的细节,用到rax和rdx
   switch (op_) {
-    case PLUS_OP:
-      // 先把left移到res 因为 addq a, b <=> b=a+b
-      instr_list.Append(new assem::MoveInstr("movq `s0, `d0",
-                                             new temp::TempList({res}),
-                                             new temp::TempList({left})));
-      // res是隐藏的(implicit)src
-      // 考虑res=res+right 左边是dst右边是src
-      // 计算完了以后res里存的是加起来的和
-      // 这里的src和dst在后面用来做活跃分析
-      instr_list.Append(
-          new assem::OperInstr("addq `s0, `d0", new temp::TempList({res}),
-                               new temp::TempList({right, res}), nullptr));
-      break;
-    case MINUS_OP:
-      // 减法与加法基本一致
-      instr_list.Append(new assem::MoveInstr("movq `s0, `d0",
-                                             new temp::TempList({res}),
-                                             new temp::TempList({left})));
-      instr_list.Append(
-          new assem::OperInstr("subq `s0, `d0", new temp::TempList({res}),
-                               new temp::TempList({right, res}), nullptr));
-      break;
-    case MUL_OP:
-      // R[%rdx]:R[%rax]<-S×R[%rax] 有符号乘法
-      // 将left移动到%rax里，这里returnValue指代%rax
-      instr_list.Append(new assem::MoveInstr(
-          "movq `s0, `d0", new temp::TempList({reg_manager->ReturnValue()}),
-          new temp::TempList({left})));
+  case PLUS_OP:
+    // 先把left移到res 因为 addq a, b <=> b=a+b
+    instr_list.Append(new assem::MoveInstr("movq `s0, `d0",
+                                           new temp::TempList({res}),
+                                           new temp::TempList({left})));
+    // res是隐藏的(implicit)src
+    // 考虑res=res+right 左边是dst右边是src
+    // 计算完了以后res里存的是加起来的和
+    // 这里的src和dst在后面用来做活跃分析
+    instr_list.Append(
+        new assem::OperInstr("addq `s0, `d0", new temp::TempList({res}),
+                             new temp::TempList({right, res}), nullptr));
+    break;
+  case MINUS_OP:
+    // 减法与加法基本一致
+    instr_list.Append(new assem::MoveInstr("movq `s0, `d0",
+                                           new temp::TempList({res}),
+                                           new temp::TempList({left})));
+    instr_list.Append(
+        new assem::OperInstr("subq `s0, `d0", new temp::TempList({res}),
+                             new temp::TempList({right, res}), nullptr));
+    break;
+  case MUL_OP:
+    // R[%rdx]:R[%rax]<-S×R[%rax] 有符号乘法
+    // 将left移动到%rax里，这里returnValue指代%rax
+    instr_list.Append(new assem::MoveInstr(
+        "movq `s0, `d0", new temp::TempList({reg_manager->ReturnValue()}),
+        new temp::TempList({left})));
 
-      // 将right作为imulq的参数，它会与%rax做乘法，并将结果存放在%rax和%rdx中
-      // 等价于 R[%rdx]:R[%rax] = S * R[%rax]
-      // src: S, rax; dst:rax,rdx
-      instr_list.Append(new assem::OperInstr(
-          "imulq `s0", reg_manager->OperateRegs(),
-          new temp::TempList({right, reg_manager->ReturnValue()}), nullptr));
+    // 将right作为imulq的参数，它会与%rax做乘法，并将结果存放在%rax和%rdx中
+    // 等价于 R[%rdx]:R[%rax] = S * R[%rax]
+    // src: S, rax; dst:rax,rdx
+    instr_list.Append(new assem::OperInstr(
+        "imulq `s0", reg_manager->OperateRegs(),
+        new temp::TempList({right, reg_manager->ReturnValue()}), nullptr));
 
-      // 最后把%rax移动到reg中,这里只取64位，多的就算溢出了
-      instr_list.Append(new assem::MoveInstr(
-          "movq `s0, `d0", new temp::TempList({res}),
-          new temp::TempList({reg_manager->ReturnValue()})));
-      break;
-    case DIV_OP:
-      // cqto
-      // R[%rdx]:R[%rax]←符号扩展(R[%rax])
-      // idivq S
-      // R[%rdx]←R[%rdx]:R[%rax] mod S
-      // R[%rax]←R[%rdx]:R[%rax] ÷ S
+    // 最后把%rax移动到reg中,这里只取64位，多的就算溢出了
+    instr_list.Append(
+        new assem::MoveInstr("movq `s0, `d0", new temp::TempList({res}),
+                             new temp::TempList({reg_manager->ReturnValue()})));
+    break;
+  case DIV_OP:
+    // cqto
+    // R[%rdx]:R[%rax]←符号扩展(R[%rax])
+    // idivq S
+    // R[%rdx]←R[%rdx]:R[%rax] mod S
+    // R[%rax]←R[%rdx]:R[%rax] ÷ S
 
-      // 移动left到%rax 同乘法
-      instr_list.Append(new assem::MoveInstr(
-          "movq `s0, `d0", new temp::TempList({reg_manager->ReturnValue()}),
-          new temp::TempList({left})));
+    // 移动left到%rax 同乘法
+    instr_list.Append(new assem::MoveInstr(
+        "movq `s0, `d0", new temp::TempList({reg_manager->ReturnValue()}),
+        new temp::TempList({left})));
 
-      // cqto进行扩展，直接把rax的符号位复制到rdx
-      // dst:rax,rdx src:rax
-      instr_list.Append(new assem::OperInstr(
-          "cqto", reg_manager->OperateRegs(),
-          new temp::TempList({reg_manager->ReturnValue()}), nullptr));
+    // cqto进行扩展，直接把rax的符号位复制到rdx
+    // dst:rax,rdx src:rax
+    instr_list.Append(new assem::OperInstr(
+        "cqto", reg_manager->OperateRegs(),
+        new temp::TempList({reg_manager->ReturnValue()}), nullptr));
 
-      // 将右值作为idivq的参数，它是除数与%rax相除，并将商和余数存放在%rax和%rdx中
-      // 这里被修改的reg是rax和rdx，被读取的是right
-      instr_list.Append(
-          new assem::OperInstr("idivq `s0", reg_manager->OperateRegs(),
-                               new temp::TempList({right}), nullptr));
+    // 将右值作为idivq的参数，它是除数与%rax相除，并将商和余数存放在%rax和%rdx中
+    // 这里被修改的reg是rax和rdx，被读取的是right
+    instr_list.Append(
+        new assem::OperInstr("idivq `s0", reg_manager->OperateRegs(),
+                             new temp::TempList({right}), nullptr));
 
-      // movq %rax, res
-      instr_list.Append(new assem::MoveInstr(
-          "movq `s0, `d0", new temp::TempList({res}),
-          new temp::TempList({reg_manager->ReturnValue()})));
-      break;
-    default:
-      assert(0);
-      break;
+    // movq %rax, res
+    instr_list.Append(
+        new assem::MoveInstr("movq `s0, `d0", new temp::TempList({res}),
+                             new temp::TempList({reg_manager->ReturnValue()})));
+    break;
+  default:
+    assert(0);
+    break;
   }
   return res;
 }
@@ -309,7 +310,8 @@ temp::Temp *MemExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
 temp::Temp *TempExp::Munch(assem::InstrList &instr_list, std::string_view fs) {
   /* TODO: Put your lab5 code here */
   // 所有的FP都会被包裹在TempExp中出现，所以在这里进行替换
-  if (temp_ != reg_manager->FramePointer()) return temp_;
+  if (temp_ != reg_manager->FramePointer())
+    return temp_;
   // 出现FP，进行替换 SP+framesize
   // leaq xx_framesize(`s0), `d0"
   // src:rsp dst:res
@@ -427,4 +429,4 @@ temp::TempList *ExpList::MunchArgs(assem::InstrList &instr_list,
   return res;
 }
 
-}  // namespace tree
+} // namespace tree
