@@ -13,12 +13,12 @@ void FlowGraphFactory::AssemFlowGraph() {
     FNodePtr cur = flowgraph_->NewNode(instr);
     if (prev)
       flowgraph_->AddEdge(prev, cur);
-    if (typeid(instr) == typeid(assem::LabelInstr *)) {
+    if (typeid(*instr) == typeid(assem::LabelInstr)) {
       auto p = dynamic_cast<assem::LabelInstr *>(instr);
       label_map_->Enter(p->label_, cur);
     }
     prev = cur;
-    if (typeid(instr) == typeid(assem::OperInstr *)) {
+    if (typeid(*instr) == typeid(assem::OperInstr)) {
       auto p = dynamic_cast<assem::OperInstr *>(instr);
       if (p->assem_.find("jmp") == 0) {
         // if instr is unconditional jump
@@ -30,7 +30,7 @@ void FlowGraphFactory::AssemFlowGraph() {
   // handle the unconditional & conditional jump
   for (const auto &node : flowgraph_->Nodes()->GetList()) {
     auto instr = node->NodeInfo();
-    if (typeid(instr) == typeid(assem::OperInstr *)) {
+    if (typeid(*instr) == typeid(assem::OperInstr)) {
       auto p = dynamic_cast<assem::OperInstr *>(instr);
       if (p->jumps_) {
         if (p->jumps_->labels_) {

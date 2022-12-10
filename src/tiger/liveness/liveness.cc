@@ -12,7 +12,7 @@ void TempList::assign(const std::set<Temp *> &s) {
   }
 }
 
-}; // namespace temp
+} // namespace temp
 
 namespace live {
 
@@ -100,19 +100,19 @@ void LiveGraphFactory::LiveMap() {
         in_set.insert(temp);
       }
       // check if in[s] changed
-      if (in_set != in_origin){
+      if (in_set != in_origin) {
         changed = true;
         in_list->assign(in_set);
       }
 
       // out[s] = ∪{n∈succ[s]}_{in[n]}
-      for (const auto &succ : node->Succ()->GetList()){
-        for (const auto &temp: in_->Look(succ)->GetList()){
+      for (const auto &succ : node->Succ()->GetList()) {
+        for (const auto &temp : in_->Look(succ)->GetList()) {
           out_set.insert(temp);
         }
       }
       // check if out[s] changed
-      if (out_set != out_origin){
+      if (out_set != out_origin) {
         changed = true;
         out_list->assign(out_set);
       }
@@ -120,11 +120,122 @@ void LiveGraphFactory::LiveMap() {
   }
 }
 
-void LiveGraphFactory::InterfGraph() { /* TODO: Put your lab6 code here */
+void LiveGraphFactory::InterfGraph() {
+  /* TODO: Put your lab6 code here */
+  auto &interf_graph = live_graph_.interf_graph;
+  auto &moves = live_graph_.moves;
+
+  // 15个寄存器，除了rsp不参与分配
+  // 这些相当于是预着色的结点
+  temp::TempList *regs = reg_manager->Registers();
+  // 下面找出所有的节点，使用set去重
+  std::set<temp::Temp *> temps;
+  // 将这些寄存器转化成图中的节点
+  // 注意：按照书上的做法，为了减少边，reg之间不互相连边，这些属于precolored，到时候直接判断两个预着色的就行
+  for (auto &reg : regs->GetList()) {
+    temps.insert(reg);
+  }
+
+  for (auto &node : flowgraph_->Nodes()->GetList()) {
+    // add use[s]
+    for (auto &temp : node->NodeInfo()->Use()->GetList()) {
+      temps.insert(temp);
+    }
+    // add def[s]
+    for (auto &temp : node->NodeInfo()->Def()->GetList()) {
+      temps.insert(temp);
+    }
+  }
+  // 不管里面的rsp,不用给他分配颜色，后面加颜色的时候也不加rsp，所以也不用管这些node和rsp的冲突关系
+  temps.erase(reg_manager->StackPointer());
+  // 把temps中的去重过后的节点加入interference graph
+  for (auto &temp : temps)
+    temp_node_map_->Enter(temp, interf_graph->NewNode(temp));
+
+  // 添加冲突边
+  // 设一条non-move-related 指令的 Def 中的 a
+  // ，对该指令out[s]中的任意变量b[i]，添加冲突边(a, b[i]) 设一条 move-related
+  // 指令为 a<-c，对该指令out[s]中的任意不同于c的变量b[i]，添加冲突边(a, b[i])
+  temp::Temp *rsp = reg_manager->StackPointer();
+  for (auto &node : flowgraph_->Nodes()->GetList()) {
+    auto instr = node->NodeInfo();
+    if (typeid(*instr) == typeid(assem::MoveInstr)) {
+      // move-related
+
+      // 处理out、def的temp集合，去除rsp
+      std::set<temp::Temp *> out, def;
+      for (auto &out_temp : out_->Look(node)->GetList()) {
+        out.insert(out_temp);
+      }
+      out.erase(rsp);
+      for (auto &def_temp : instr->Def()->GetList()) {
+        def.insert(def_temp);
+      }
+      def.erase(rsp);
+      // 对于moveInstr 需要再out中减去use
+      auto use_list = instr->Use()->GetList();
+      assert(use_list.size() == 1);
+      out.erase(use_list.front());
+
+      // 双重循环，添加边 (out-use)<->def
+      for (auto &out_temp : out) {
+        auto out_node = temp_node_map_->Look(out_temp);
+        for (auto &def_temp : def) {
+          auto def_node = temp_node_map_->Look(def_temp);
+          // 规避自环
+          if (out_node == def_node)
+            continue;
+          interf_graph->AddEdge(def_node, out_node);
+          interf_graph->AddEdge(out_node, def_node);
+        }
+      }
+
+      // 添加传送指令
+      auto def_list = instr->Def()->GetList();
+      // use、def 都只有一个
+      assert(def_list.size() == 1);
+      auto &dst = def_list.front();
+      auto &src = use_list.front();
+      if (dst != rsp && src != rsp) {
+        auto dst_node = temp_node_map_->Look(dst);
+        auto src_node = temp_node_map_->Look(src);
+        if (!moves->Contain(src_node, dst_node)) {
+          moves->Append(src_node, dst_node);
+        }
+      }
+    } else {
+      // non-move-related
+      // 处理out、def的temp集合，去除rsp
+      std::set<temp::Temp *> out, def;
+      for (auto &out_temp : out_->Look(node)->GetList()) {
+        out.insert(out_temp);
+      }
+      out.erase(rsp);
+      for (auto &def_temp : instr->Def()->GetList()) {
+        def.insert(def_temp);
+      }
+      def.erase(rsp);
+
+      // 双重循环，添加边 out<->def
+      for (auto &out_temp : out) {
+        auto out_node = temp_node_map_->Look(out_temp);
+        for (auto &def_temp : def) {
+          auto def_node = temp_node_map_->Look(def_temp);
+          // 规避自环
+          if (out_node == def_node)
+            continue;
+          interf_graph->AddEdge(def_node, out_node);
+          interf_graph->AddEdge(out_node, def_node);
+        }
+      }
+    }
+  }
 }
 
 void LiveGraphFactory::Liveness() {
+  // liveness analysis
   LiveMap();
+  // build inteference graph
   InterfGraph();
 }
 
