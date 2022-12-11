@@ -7,11 +7,13 @@ extern frame::RegManager *reg_manager;
 namespace ra {
 /* TODO: Put your lab6 code here */
 void RegAllocator::RegAlloc() {
-
+  K = (int)reg_manager->Registers()->GetList().size();
+  assert(K == 15);
   // 一直循环Main直到没有spilledNode
   while (true) {
     live_graph = AnalyzeLiveness(instr_list_);
     Build();
+    MakeWorklist();
   }
 }
 live::LiveGraph RegAllocator::AnalyzeLiveness(assem::InstrList *instr_list_) {
@@ -95,6 +97,7 @@ void RegAllocator::Build() {
     }
   }
 }
+
 void RegAllocator::AddEdge(live::INode *u, live::INode *v) {
   if (u == v)
     return;
@@ -115,8 +118,33 @@ void RegAllocator::AddEdge(live::INode *u, live::INode *v) {
     }
   }
 }
+
 bool RegAllocator::is_Pre_colored(live::INodePtr t) const {
   return pre_colored.find(t) != pre_colored.end();
+}
+
+void RegAllocator::MakeWorklist() {
+  for (auto node : live_graph.interf_graph->Nodes()->GetList()) {
+
+    if (is_Pre_colored(node)) {
+      continue; // 跳过预着色
+    }
+    int d = degrees[node];
+    if (d >= K) {
+      spillWorklist.insert(node);
+    } else if (MoveRelated(node)) {
+      freezeWorklist.insert(node);
+    } else {
+      simplifyWorklist.insert(node);
+    }
+  }
+}
+
+bool RegAllocator::MoveRelated(live::INode *node) {
+  // NodeMove(n) != Ø
+  // 这里针对书上的做一些修改， moveList等于书上的NodeMoves
+  // 即moveList只保存activeMoves和worklistMoves
+  return !moveList[node]->empty();
 }
 
 } // namespace ra

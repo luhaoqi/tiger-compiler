@@ -50,6 +50,7 @@ private:
   frame::Frame *frame_;                // corresponding frame
   assem::InstrList *instr_list_;       // assem instruction list
   std::unique_ptr<ra::Result> result_; // Temp 与 Register 的对应关系（map)
+  int K{15};
 
   // 过程中记录的临时变量
   live::LiveGraph live_graph{};
@@ -85,6 +86,9 @@ private:
   void Build();
   void AddEdge(live::INode *u, live::INode *v); // 添加边到adjSet与adjList
   bool is_Pre_colored(live::INodePtr t) const;
+
+  void MakeWorklist();
+  bool MoveRelated(live::INode *node);
 };
 
 } // namespace ra
