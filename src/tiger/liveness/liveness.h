@@ -41,6 +41,7 @@ struct LiveGraph {
   IGraphPtr interf_graph;
   MoveList *moves;
 
+  LiveGraph() = default;
   LiveGraph(IGraphPtr interf_graph, MoveList *moves)
       : interf_graph(interf_graph), moves(moves) {}
 };

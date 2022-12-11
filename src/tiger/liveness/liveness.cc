@@ -131,7 +131,7 @@ void LiveGraphFactory::InterfGraph() {
   // 下面找出所有的节点，使用set去重
   std::set<temp::Temp *> temps;
   // 将这些寄存器转化成图中的节点
-  // 注意：按照书上的做法，为了减少边，reg之间不互相连边，这些属于precolored，到时候直接判断两个预着色的就行
+  // 注意：按照书上的做法，为了减少边，reg之间不互相连边，这些属于pre_colored，到时候直接判断两个预着色的就行
   for (auto &reg : regs->GetList()) {
     temps.insert(reg);
   }
@@ -221,7 +221,7 @@ void LiveGraphFactory::InterfGraph() {
         auto out_node = temp_node_map_->Look(out_temp);
         for (auto &def_temp : def) {
           auto def_node = temp_node_map_->Look(def_temp);
-          // 规避自环
+          // 规避自环，其实在reg alloc中的Add edge中也判断了
           if (out_node == def_node)
             continue;
           interf_graph->AddEdge(def_node, out_node);
@@ -235,7 +235,7 @@ void LiveGraphFactory::InterfGraph() {
 void LiveGraphFactory::Liveness() {
   // liveness analysis
   LiveMap();
-  // build inteference graph
+  // build interference graph
   InterfGraph();
 }
 
