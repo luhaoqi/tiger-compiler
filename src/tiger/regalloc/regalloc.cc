@@ -14,6 +14,42 @@ void RegAllocator::RegAlloc() {
     live_graph = AnalyzeLiveness(instr_list_);
     Build();
     MakeWorklist();
+    do {
+      // 在执行后面操作的时候还可能到前面来，所以每个操作每次只执行一个node
+      if (!simplifyWorklist.empty()) {
+        Simplify();
+      } else if (!worklistMoves.empty()) {
+        Coalesce();
+      } else if (!freezeWorklist.empty()) {
+        Freeze();
+      } else if (!spillWorklist.empty()) {
+        SelectSpill();
+      }
+    } while (!simplifyWorklist.empty() || !worklistMoves.empty() ||
+             !freezeWorklist.empty() || !spillWorklist.empty());
+
+    AssignColors();
+
+    if (spilledNodes.empty()) {
+      // 将着色转入result
+      result_->coloring_ = temp::Map::Empty();
+      for (const auto &t : color_) {
+        result_->coloring_->Enter(t.first, new std::string(t.second));
+      }
+      // 寄存器不需要放，因为在output.cc中color上面还叠了temp_map_
+      // 但是下面简化指令的时候可能找到寄存器，所以需要加进去
+      // color_中有除了rsp的所有
+      result_->coloring_->Enter(reg_manager->StackPointer(),
+                                new std::string("%rsp"));
+
+      SimplifyInstrList();
+      result_->il_ = instr_list_;
+
+      // 跳出循环
+      break;
+    } else {
+      RewriteProgram();
+    }
   }
 }
 live::LiveGraph RegAllocator::AnalyzeLiveness(assem::InstrList *instr_list_) {
@@ -53,6 +89,9 @@ void RegAllocator::Clear() {
   adjSet.clear();
   adjList.clear();
   color_.clear();
+
+  node_type.clear();
+  move_type.clear();
 }
 
 void RegAllocator::Build() {
@@ -80,16 +119,20 @@ void RegAllocator::Build() {
   for (auto &move : org_move_list) {
     auto src = move.first;
     auto dst = move.second;
-    moveList[src]->insert(std::make_pair(src, dst));
-    moveList[dst]->insert(std::make_pair(src, dst));
+    InodePtrPair t = std::make_pair(src, dst);
+    moveList[src]->insert(t);
+    moveList[dst]->insert(t);
 
-    worklistMoves.insert(std::make_pair(src, dst));
+    worklistMoves.insert(t);
+    move_type[t] = WORK_LIST_MOVE;
   }
 
   for (auto &u : live_graph.interf_graph->Nodes()->GetList()) {
     // init pre_colored
-    if (reg_manager->temp_map_->Look(u->NodeInfo()) != nullptr)
+    if (reg_manager->temp_map_->Look(u->NodeInfo()) != nullptr) {
       pre_colored.insert(u);
+      node_type[u] = PRE_COLORED;
+    }
 
     // add edge
     for (auto v : u->Adj()->GetList()) {
@@ -120,6 +163,7 @@ void RegAllocator::AddEdge(live::INode *u, live::INode *v) {
 }
 
 bool RegAllocator::is_Pre_colored(live::INodePtr t) const {
+  // 这边调用pre_colored 或者 node_type 都行，甚至不需要pre_colored了
   return pre_colored.find(t) != pre_colored.end();
 }
 
@@ -132,12 +176,20 @@ void RegAllocator::MakeWorklist() {
     int d = degrees[node];
     if (d >= K) {
       spillWorklist.insert(node);
+      node_type[node] = SPILL_WORK_LIST;
     } else if (MoveRelated(node)) {
       freezeWorklist.insert(node);
+      node_type[node] = FREEZE_WORK_LIST;
     } else {
       simplifyWorklist.insert(node);
+      node_type[node] = SIMPLIFY_WORK_LIST;
     }
   }
+}
+
+INodeSetPtr RegAllocator::Adjacent(live::INodePtr node) {
+  //  这里也是类似的修改adjlist的定义，动态删除因此后面就不用做集合操作了
+  return adjList[node];
 }
 
 bool RegAllocator::MoveRelated(live::INode *node) {
@@ -145,6 +197,259 @@ bool RegAllocator::MoveRelated(live::INode *node) {
   // 这里针对书上的做一些修改， moveList等于书上的NodeMoves
   // 即moveList只保存activeMoves和worklistMoves
   return !moveList[node]->empty();
+
+  // 如果想要不删除moveList
+  //  for (const auto &x:*moveList[node]){
+  //    if (move_type[x] == ACTIVE_MOVE || move_type[x] == COALESCED_MOVE)
+  //      return true;
+  //  }
+  //  return false;
+}
+
+void RegAllocator::EnableMoves(live::INode *node) {
+  // 这里的修改是从active_move -> work_list_move
+  // 因此不用修改moveList[]
+  auto node_moves = moveList[node];
+  for (auto move : *node_moves) {
+    if (move_type[move] == ACTIVE_MOVE) {
+      // activeMoves <- activeMoves \ m
+      activeMoves.erase(move);
+      // worklistMoves <- worklistMoves ∪ m
+      worklistMoves.insert(move);
+      move_type[move] = WORK_LIST_MOVE;
+    }
+  }
+}
+
+void RegAllocator::DecrementDegree(live::INode *node) {
+  if (is_Pre_colored(node)) {
+    return;
+  }
+  // 这里多做个assert检查 可以写成degree[node]--;
+  auto it = degrees.find(node);
+  assert(it != degrees.end());
+  int d = it->second;
+  it->second--;
+
+  if (d == K) {
+    // EnableMoves({m} ∪ Adjacent(m))
+    EnableMoves(node);
+    for (const auto &x : *adjList[node]) {
+      auto type = node_type[x];
+      if (type == SELECTED_NODE || type == COALESCED_NOED)
+        continue;
+      EnableMoves(x);
+    }
+    spillWorklist.erase(node);
+    if (MoveRelated(node)) {
+      freezeWorklist.insert(node);
+      node_type[node] = FREEZE_WORK_LIST;
+    } else {
+      simplifyWorklist.insert(node);
+      node_type[node] = SIMPLIFY_WORK_LIST;
+    }
+  }
+}
+
+void RegAllocator::Simplify() {
+  auto it = simplifyWorklist.begin();
+  auto node = *it; // 随便选，选begin
+  // move node from simplifyWorklist to selectedStack
+  simplifyWorklist.erase(it);
+  selectStack.push_back(node);
+  node_type[node] = SELECTED_NODE;
+  // get adjacent of node
+  //  INodeSetPtr adj = Adjacent(node);
+  // remove node and update graph
+  for (auto adj_node : *adjList[node]) {
+    auto type = node_type[adj_node];
+    if (type == SELECTED_NODE || type == COALESCED_NOED)
+      continue;
+    DecrementDegree(adj_node);
+  }
+}
+
+live::INodePtr RegAllocator::GetAlias(live::INodePtr node) const {
+  if (coalescedNodes.find(node) != coalescedNodes.end()) {
+    auto it = alias.find(node);
+    assert(it != alias.end());
+    return GetAlias(it->second);
+  }
+  return node;
+}
+
+void RegAllocator::AddWorkList(live::INode *node) {
+  // 尝试将该节点从传送有关转为传送无关
+  if (!is_Pre_colored(node) && !MoveRelated(node) && degrees[node] < K) {
+    assert(freezeWorklist.find(node) != freezeWorklist.end());
+    freezeWorklist.erase(node);
+    simplifyWorklist.insert(node);
+    node_type[node] = SIMPLIFY_WORK_LIST;
+  }
+}
+
+bool RegAllocator::OK(const live::INodePtr &v, const live::INodePtr &u) {
+  for (const auto &t : *adjList[v]) {
+    auto type = node_type[t];
+    if (type == SELECTED_NODE || type == COALESCED_NOED)
+      continue;
+    // true：t is pre_colored || degree[t] < K || (t, u) belongs adjSet
+    if (!(is_Pre_colored(t) || degrees[t] < K ||
+          adjSet.find(std::make_pair(t, u)) != adjSet.end()))
+      return false;
+  }
+  // 每一个都符合才是true
+  return true;
+}
+
+bool RegAllocator::Conservative(const live::INodePtr &u,
+                                const live::INodePtr &v) {
+  INodeSet s; // 为了防止两个adjacent有交集，需要使用set
+  for (const auto &node : *adjList[u]) {
+    auto type = node_type[node];
+    if (type == SELECTED_NODE || type == COALESCED_NOED)
+      continue;
+    // 本来应该把pre_colored 的节点degree设为无穷大的
+    if (is_Pre_colored(node) || degrees[node] >= K)
+      s.insert(node);
+  }
+  for (const auto &node : *adjList[v]) {
+    auto type = node_type[node];
+    if (type == SELECTED_NODE || type == COALESCED_NOED)
+      continue;
+    if (is_Pre_colored(node) || degrees[node] >= K)
+      s.insert(node);
+  }
+  return (int)s.size() < K;
+}
+
+void RegAllocator::Combine(live::INode *u, live::INode *v) {
+  // v -> u
+  // v是move_related 不可能在simplifyWorkList
+  auto type = node_type[v];
+  assert(type == FREEZE_WORK_LIST || type == SPILL_WORK_LIST);
+  if (type == FREEZE_WORK_LIST) {
+    freezeWorklist.erase(v);
+  } else if (type == SPILL_WORK_LIST){
+    spillWorklist.erase(v);
+  }
+  coalescedNodes.insert(v);
+  node_type[v] = COALESCED_NOED;
+
+  alias[v] = u;
+
+  // 额外的check，可删
+  auto it1 = moveList.find(u);
+  auto it2 = moveList.find(v);
+  assert(it1 != moveList.end());
+  assert(it2 != moveList.end());
+
+  // 合并moveList[v] 到 moveList[u]
+  for (const auto &move: *moveList[v]){
+    moveList[u]->insert(move);
+  }
+
+  EnableMoves(v);
+
+  for (const auto &node : *adjList[v]) {
+    auto type_ = node_type[node];
+    if (type_ == SELECTED_NODE || type_ == COALESCED_NOED)
+      continue;
+    AddEdge(node, u);
+    DecrementDegree(node);
+  }
+
+  if (degrees[u] >= K && node_type[u] == FREEZE_WORK_LIST) {
+    freezeWorklist.erase(u);
+    spillWorklist.insert(u);
+    node_type[u] = SPILL_WORK_LIST;
+  }
+}
+
+void RegAllocator::Coalesce() {
+  auto move = *worklistMoves.begin();
+  auto x = move.first;  // src
+  auto y = move.second; // dest
+
+  live::INodePtr u= nullptr, v= nullptr;
+  // 交换顺序，最后是v合并到u，不可能两个都是pre_colored
+  if (is_Pre_colored(y)) {
+    u = GetAlias(y);
+    v = GetAlias(x);
+  } else {
+    u = GetAlias(x);
+    v = GetAlias(y);
+  }
+  // 从workListMoves中删除，记得从moveList中删除
+  worklistMoves.erase(move);
+  moveList[x]->erase(move);
+  moveList[y]->erase(move);
+  // 开始判断
+  if (u == v) {
+    // 如果src == dst，那么很简单地合并
+    // 这种情况可能发生在 a,b,c互相move
+    coalescedMoves.insert(move);
+    move_type[move] = COALESCED_MOVE;
+    AddWorkList(u);
+  } else if (is_Pre_colored(v) ||
+             adjSet.find(std::make_pair(u, v)) != adjSet.end()) {
+    // u,v都是预着色或者有冲突边，加入冲突边集合
+    constrainedMoves.insert(move);
+    move_type[move] = CONSTRAINED_MOVE;
+    // 在上面把move语句从workListMoves中删除后moveList[]得到更新
+    // 可以尝试把u,v 转换为传送无关节点，之后可以简化
+    AddWorkList(u);
+    AddWorkList(v);
+  } else if (
+      // 符合 George条件
+      // 对v的任意邻居，要么已经和u冲突，要么是低度数
+      // 此处只对u是预着色的实寄存器采用这种方法判断
+      (is_Pre_colored(u) && OK(v, u)) ||
+      // 符合 Briggs 条件
+      // uv合并后不会变成高度数节点
+      // 此处对两个非预着色临时temp的使用该条件判断
+      (!is_Pre_colored(u) && Conservative(u, v))) {
+    coalescedMoves.insert(move);
+    move_type[move] = COALESCED_MOVE;
+    Combine(u, v);
+    AddWorkList(u);
+  } else {
+    // 无法合并，加入activeMoves
+    // 等之后再通过EnableMoves恢复到worklistMoves中
+    activeMoves.insert(move);
+    move_type[move] = ACTIVE_MOVE;
+    // 因为是active_move 所以需要加回来
+    moveList[x]->insert(move);
+    moveList[y]->insert(move);
+  }
+}
+
+void RegAllocator::Freeze() {}
+
+void RegAllocator::SelectSpill() {}
+
+void RegAllocator::AssignColors() {}
+
+void RegAllocator::RewriteProgram() {}
+
+void RegAllocator::SimplifyInstrList() {
+  auto *ret = new assem::InstrList();
+  for (auto instr : instr_list_->GetList()) {
+    if (typeid(*instr) == typeid(assem::MoveInstr)) {
+      temp::Temp *src = *(instr->Use()->GetList().begin());
+      temp::Temp *dst = *(instr->Def()->GetList().begin());
+
+      auto src_ptr = result_->coloring_->Look(src);
+      auto dst_ptr = result_->coloring_->Look(dst);
+      if (src_ptr == dst_ptr ||
+          (src_ptr && dst_ptr && (*src_ptr == *dst_ptr))) {
+        continue;
+      }
+    }
+    ret->Append(instr);
+  };
+  delete instr_list_;
+  instr_list_ = ret;
 }
 
 } // namespace ra
