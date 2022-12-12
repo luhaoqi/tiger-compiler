@@ -138,6 +138,9 @@ private:
   void AssignColors();
   void RewriteProgram();
   void SimplifyInstrList(); // 简化move指令
+
+  temp::Map *c; // 存放现有的寄存器和temp
+  const char *getNodeName(live::INodePtr node);
 };
 
 } // namespace ra

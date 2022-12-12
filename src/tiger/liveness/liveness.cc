@@ -99,17 +99,18 @@ void LiveGraphFactory::LiveMap() {
       for (const auto &temp : cur->Use()->GetList()) {
         in_set.insert(temp);
       }
-      // check if in[s] changed
-      if (in_set != in_origin) {
-        changed = true;
-        in_list->assign(in_set);
-      }
 
       // out[s] = ∪{n∈succ[s]}_{in[n]}
       for (const auto &succ : node->Succ()->GetList()) {
         for (const auto &temp : in_->Look(succ)->GetList()) {
           out_set.insert(temp);
         }
+      }
+
+      // check if in[s] changed
+      if (in_set != in_origin) {
+        changed = true;
+        in_list->assign(in_set);
       }
       // check if out[s] changed
       if (out_set != out_origin) {
@@ -118,6 +119,33 @@ void LiveGraphFactory::LiveMap() {
       }
     }
   }
+  // print in out def use
+  //  auto c = temp::Map::LayerMap(reg_manager->temp_map_, temp::Map::Name());
+  //  printf("output def & out\n");
+  //  for (const auto &node : flowgraph_->Nodes()->GetList()) {
+  //    auto in_list = in_->Look(node);
+  //    auto out_list = out_->Look(node);
+  //    printf("instr: %s
+  //    \n",((assem::OperInstr*)(node->NodeInfo()))->assem_.c_str());
+  //    printf("def: ");
+  //    for (const auto &temp : node->NodeInfo()->Def()->GetList()) {
+  //      printf("%s ", c->Look(temp)->c_str());
+  //    }
+  //    printf("      use: ");
+  //    for (const auto &temp : node->NodeInfo()->Use()->GetList()) {
+  //      printf("%s ", c->Look(temp)->c_str());
+  //    }
+  //    printf("\nout: ");
+  //    for (const auto &temp : out_list->GetList()) {
+  //      printf("%s ", c->Look(temp)->c_str());
+  //    }
+  //    printf("\nin: ");
+  //    for (const auto &temp : in_list->GetList()) {
+  //      printf("%s ", c->Look(temp)->c_str());
+  //    }
+  //    printf("\n");
+  //    printf("----------\n");
+  //  }
 }
 
 void LiveGraphFactory::InterfGraph() {
@@ -139,10 +167,14 @@ void LiveGraphFactory::InterfGraph() {
   for (auto &node : flowgraph_->Nodes()->GetList()) {
     // add use[s]
     for (auto &temp : node->NodeInfo()->Use()->GetList()) {
+//      if (temp == reg_manager->GetRegister(frame::RegisterName::rcx))
+//        printf("use[s]: %s\n",((assem::OperInstr*)(node->NodeInfo()))->assem_.c_str());
       temps.insert(temp);
     }
     // add def[s]
     for (auto &temp : node->NodeInfo()->Def()->GetList()) {
+//      if (temp == reg_manager->GetRegister(frame::RegisterName::rcx))
+//        printf("use[s]: %s\n",((assem::OperInstr*)(node->NodeInfo()))->assem_.c_str());
       temps.insert(temp);
     }
   }

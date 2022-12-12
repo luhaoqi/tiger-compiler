@@ -7,6 +7,11 @@ extern frame::RegManager *reg_manager;
 
 namespace ra {
 /* TODO: Put your lab6 code here */
+
+const char *RegAllocator::getNodeName(live::INodePtr node) {
+  return c->Look(node->NodeInfo())->c_str();
+}
+
 void RegAllocator::RegAlloc() {
   K = (int)reg_manager->Registers()->GetList().size();
   assert(K == 15);
@@ -19,7 +24,10 @@ void RegAllocator::RegAlloc() {
   }
   assert(reg_colors.size() == 15);
   // 一直循环Main直到没有spilledNode
+  int loop_num = 0;
   while (true) {
+    c = temp::Map::LayerMap(reg_manager->temp_map_, temp::Map::Name());
+    TigerLog("loop: %d\n", ++loop_num);
     live_graph = AnalyzeLiveness(instr_list_);
     Build();
     MakeWorklist();
@@ -37,6 +45,7 @@ void RegAllocator::RegAlloc() {
     } while (!simplifyWorklist.empty() || !worklistMoves.empty() ||
              !freezeWorklist.empty() || !spillWorklist.empty());
 
+    TigerLog("AssignColors();\n");
     AssignColors();
 
     if (spilledNodes.empty()) {
@@ -85,6 +94,7 @@ void RegAllocator::Clear() {
   coalescedNodes.clear();
   coloredNodes.clear();
   selectStack.clear();
+  spilledNodes.clear();
 
   coalescedMoves.clear();
   constrainedMoves.clear();
@@ -276,6 +286,7 @@ void RegAllocator::Simplify() {
       continue;
     DecrementDegree(adj_node);
   }
+  TigerLog("Simplify: %s\n", c->Look(node->NodeInfo())->c_str());
 }
 
 live::INodePtr RegAllocator::GetAlias(live::INodePtr node) const {
@@ -298,15 +309,19 @@ void RegAllocator::AddWorkList(live::INode *node) {
 }
 
 bool RegAllocator::OK(const live::INodePtr &v, const live::INodePtr &u) {
+  TigerLog("OK: v:%s u:%s\n", getNodeName(v), getNodeName(u));
   for (const auto &t : *adjList[v]) {
     auto type = node_type[t];
     if (type == SELECTED_NODE || type == COALESCED_NOED)
       continue;
+    TigerLog("check v's adj(t) %s, degree[t]=%d (t,u)=%d\n", getNodeName(t),
+             degrees[t], adjSet.find(std::make_pair(t, u)) != adjSet.end());
     // true：t is pre_colored || degree[t] < K || (t, u) belongs adjSet
     if (!(is_Pre_colored(t) || degrees[t] < K ||
           adjSet.find(std::make_pair(t, u)) != adjSet.end()))
       return false;
   }
+  TigerLog("OK: true\n");
   // 每一个都符合才是true
   return true;
 }
@@ -329,6 +344,11 @@ bool RegAllocator::Conservative(const live::INodePtr &u,
     if (is_Pre_colored(node) || degrees[node] >= K)
       s.insert(node);
   }
+  TigerLog("Conservative u=%s, v=%s\n", getNodeName(u), getNodeName(v));
+  for (auto &x:s){
+    TigerLog("%s ", getNodeName(x));
+  }
+  TigerLog(" %d\n",(int)s.size());
   return (int)s.size() < K;
 }
 
@@ -391,8 +411,8 @@ void RegAllocator::Coalesce() {
   }
   // 从workListMoves中删除，记得从moveList中删除
   worklistMoves.erase(move);
-  moveList[x]->erase(move);
-  moveList[y]->erase(move);
+  moveList[u]->erase(move);
+  moveList[v]->erase(move);
   // 开始判断
   if (u == v) {
     // 如果src == dst，那么很简单地合并
@@ -400,6 +420,7 @@ void RegAllocator::Coalesce() {
     coalescedMoves.insert(move);
     move_type[move] = COALESCED_MOVE;
     AddWorkList(u);
+    TigerLog("Coalesce u==v %s\n", c->Look(u->NodeInfo())->c_str());
   } else if (is_Pre_colored(v) ||
              adjSet.find(std::make_pair(u, v)) != adjSet.end()) {
     // u,v都是预着色或者有冲突边，加入冲突边集合
@@ -409,6 +430,8 @@ void RegAllocator::Coalesce() {
     // 可以尝试把u,v 转换为传送无关节点，之后可以简化
     AddWorkList(u);
     AddWorkList(v);
+    TigerLog("Coalesce u,v are interfered %s %s\n",
+             c->Look(u->NodeInfo())->c_str(), c->Look(v->NodeInfo())->c_str());
   } else if (
       // 符合 George条件
       // 对v的任意邻居，要么已经和u冲突，要么是低度数
@@ -422,19 +445,25 @@ void RegAllocator::Coalesce() {
     move_type[move] = COALESCED_MOVE;
     Combine(u, v);
     AddWorkList(u);
+    TigerLog("Coalesce u,v combine %s %s\n", c->Look(u->NodeInfo())->c_str(),
+             c->Look(v->NodeInfo())->c_str());
   } else {
     // 无法合并，加入activeMoves
     // 等之后再通过EnableMoves恢复到worklistMoves中
     activeMoves.insert(move);
     move_type[move] = ACTIVE_MOVE;
     // 因为是active_move 所以需要加回来
-    moveList[x]->insert(move);
-    moveList[y]->insert(move);
+    moveList[u]->insert(move);
+    moveList[v]->insert(move);
+    TigerLog("Coalesce u,v can't combine %s %s\n",
+             c->Look(u->NodeInfo())->c_str(), c->Look(v->NodeInfo())->c_str());
   }
 }
 
 void RegAllocator::FreezeMoves(live::INode *u) {
-  for (auto move : *moveList[u]) {
+  // 过程中可能会删除moveList[u] 中的move，需要一个tmp
+  MoveSet tmp = *moveList[u];
+  for (auto move : tmp) {
     auto x = move.first;  // src
     auto y = move.second; // dest
 
@@ -445,10 +474,13 @@ void RegAllocator::FreezeMoves(live::INode *u) {
       v = GetAlias(y);
     }
     // 之所以freeze是因为没有workListMoves来尝试合并了
+    //    printf("type = %d\n", move_type[move]);
     assert(move_type[move] == ACTIVE_MOVE);
     activeMoves.erase(move);
     frozenMoves.insert(move);
     move_type[move] = FROZEN_MOVE;
+    moveList[u]->erase(move);
+    moveList[v]->erase(move);
 
     if ((!is_Pre_colored(v)) && moveList[v]->empty() && degrees[v] < K) {
       assert(node_type[v] == FREEZE_WORK_LIST);
@@ -457,6 +489,7 @@ void RegAllocator::FreezeMoves(live::INode *u) {
       node_type[v] = SIMPLIFY_WORK_LIST;
     }
   }
+  assert(moveList[u]->empty());
 }
 
 void RegAllocator::Freeze() {
@@ -466,6 +499,7 @@ void RegAllocator::Freeze() {
   simplifyWorklist.insert(node);
   node_type[node] = SIMPLIFY_WORK_LIST;
   FreezeMoves(node);
+  TigerLog("Freeze %s\n", c->Look(node->NodeInfo())->c_str());
 }
 
 void RegAllocator::SelectSpill() {
@@ -492,11 +526,14 @@ void RegAllocator::SelectSpill() {
   simplifyWorklist.insert(m);
   node_type[m] = SIMPLIFY_WORK_LIST;
   FreezeMoves(m);
+  TigerLog("SelectSpill %s\n", c->Look(m->NodeInfo())->c_str());
 }
 
 void RegAllocator::AssignColors() {
+  TigerLog("num of stack %d\n", selectStack.size());
   while (!selectStack.empty()) {
     auto node = selectStack.back();
+    TigerLog("now node is %s \n", (c->Look(node->NodeInfo())->c_str()));
     selectStack.pop_back();
 
     // 可以着的色
@@ -504,15 +541,17 @@ void RegAllocator::AssignColors() {
     for (auto &it : reg_colors) {
       colors.insert(it);
     }
+    assert(colors.size() == 15);
 
     // 去掉冲突节点的颜色
     for (auto adj_node : *adjList[node]) {
-      auto type = node_type[adj_node];
-      if (type == SELECTED_NODE || type == COALESCED_NOED)
-        continue;
+      //      auto type = node_type[adj_node];
+      //      if (type == SELECTED_NODE || type == COALESCED_NOED)
+      //        continue;
+      TigerLog("now adj is %s \n", (c->Look(adj_node->NodeInfo())->c_str()));
 
       auto root = GetAlias(adj_node);
-      type = node_type[root];
+      auto type = node_type[root];
       if (type == COLORED_NODE || type == PRE_COLORED) {
         // 邻居有颜色，需要删除该颜色
         auto it = color_.find(root->NodeInfo());
@@ -522,6 +561,7 @@ void RegAllocator::AssignColors() {
     }
 
     if (colors.empty()) {
+      TigerLog("color is empty. spill\n");
       // 如果没有颜色可以用了，那么它必须被溢出
       spilledNodes.insert(node);
       node_type[node] = SPILLED_NODE;
@@ -530,6 +570,7 @@ void RegAllocator::AssignColors() {
       node_type[node] = COLORED_NODE;
       // 随机选一个颜色，比如begin
       color_.insert(std::make_pair(node->NodeInfo(), *colors.begin()));
+      TigerLog("choose color: %s\n", (*colors.begin()).c_str());
     }
   }
 
@@ -620,6 +661,8 @@ void RegAllocator::RewriteProgram() {
   for (auto instr : prev_instr_list) {
     newInstrList->Append(instr);
   }
+  delete instr_list_;
+  instr_list_ = newInstrList;
 }
 
 void RegAllocator::SimplifyInstrList() {

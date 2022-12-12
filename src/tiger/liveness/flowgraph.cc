@@ -36,10 +36,10 @@ void FlowGraphFactory::AssemFlowGraph() {
         if (p->jumps_->labels_) {
           auto labels = *(p->jumps_->labels_);
           for (const auto &label : labels) {
+//            printf("instr: %s  label: %s\n", p->assem_.c_str(), label->Name().c_str());
             FNodePtr jump_node = label_map_->Look(label);
-            if (jump_node) {
-              flowgraph_->AddEdge(node, jump_node);
-            }
+            assert(jump_node);
+            flowgraph_->AddEdge(node, jump_node);
           }
         }
       }
