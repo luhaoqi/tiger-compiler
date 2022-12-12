@@ -9,6 +9,14 @@ namespace ra {
 void RegAllocator::RegAlloc() {
   K = (int)reg_manager->Registers()->GetList().size();
   assert(K == 15);
+  // added_temps 在过程中不会被清空
+  added_temps.clear();
+  // 存下所有可以用的颜色（也就是寄存器的名字）
+  for (auto &x : reg_manager->Registers()->GetList()) {
+    std::string *s = reg_manager->temp_map_->Look(x);
+    reg_colors.push_back(*s);
+  }
+  assert(reg_colors.size() == 15);
   // 一直循环Main直到没有spilledNode
   while (true) {
     live_graph = AnalyzeLiveness(instr_list_);
@@ -330,7 +338,7 @@ void RegAllocator::Combine(live::INode *u, live::INode *v) {
   assert(type == FREEZE_WORK_LIST || type == SPILL_WORK_LIST);
   if (type == FREEZE_WORK_LIST) {
     freezeWorklist.erase(v);
-  } else if (type == SPILL_WORK_LIST){
+  } else if (type == SPILL_WORK_LIST) {
     spillWorklist.erase(v);
   }
   coalescedNodes.insert(v);
@@ -345,7 +353,7 @@ void RegAllocator::Combine(live::INode *u, live::INode *v) {
   assert(it2 != moveList.end());
 
   // 合并moveList[v] 到 moveList[u]
-  for (const auto &move: *moveList[v]){
+  for (const auto &move : *moveList[v]) {
     moveList[u]->insert(move);
   }
 
@@ -371,7 +379,7 @@ void RegAllocator::Coalesce() {
   auto x = move.first;  // src
   auto y = move.second; // dest
 
-  live::INodePtr u= nullptr, v= nullptr;
+  live::INodePtr u = nullptr, v = nullptr;
   // 交换顺序，最后是v合并到u，不可能两个都是pre_colored
   if (is_Pre_colored(y)) {
     u = GetAlias(y);
@@ -424,11 +432,117 @@ void RegAllocator::Coalesce() {
   }
 }
 
-void RegAllocator::Freeze() {}
+void RegAllocator::FreezeMoves(live::INode *u) {
+  for (auto move : *moveList[u]) {
+    auto x = move.first;  // src
+    auto y = move.second; // dest
 
-void RegAllocator::SelectSpill() {}
+    live::INode *v;
+    if (GetAlias(y) == GetAlias(u)) {
+      v = GetAlias(x);
+    } else {
+      v = GetAlias(y);
+    }
+    // 之所以freeze是因为没有workListMoves来尝试合并了
+    assert(move_type[move] == ACTIVE_MOVE);
+    activeMoves.erase(move);
+    frozenMoves.insert(move);
+    move_type[move] = FROZEN_MOVE;
 
-void RegAllocator::AssignColors() {}
+    if ((!is_Pre_colored(v)) && moveList[v]->empty() && degrees[v] < K) {
+      assert(node_type[v] == FREEZE_WORK_LIST);
+      freezeWorklist.erase(v);
+      simplifyWorklist.insert(v);
+      node_type[v] = SIMPLIFY_WORK_LIST;
+    }
+  }
+}
+
+void RegAllocator::Freeze() {
+  // 随便找第一个节点冻结
+  auto node = *freezeWorklist.begin();
+  freezeWorklist.erase(node);
+  simplifyWorklist.insert(node);
+  node_type[node] = SIMPLIFY_WORK_LIST;
+  FreezeMoves(node);
+}
+
+void RegAllocator::SelectSpill() {
+  live::INode *m = nullptr;
+  // 找度数最大的点溢出
+  // 还可以用计算权重的方法
+  int max = 0;
+  for (const auto &node : spillWorklist) {
+    if (added_temps.find(node) != added_temps.end()) {
+      continue;
+    }
+    int d = degrees[node];
+    if (d > max) {
+      max = d;
+      m = node;
+    }
+  }
+  // 如果没有就随便找一个
+  // 前面尽量先跳过因为溢出产生的新节点了
+  if (!m) {
+    m = *spillWorklist.begin();
+  }
+  spillWorklist.erase(m);
+  simplifyWorklist.insert(m);
+  node_type[m] = SIMPLIFY_WORK_LIST;
+  FreezeMoves(m);
+}
+
+void RegAllocator::AssignColors() {
+  while (!selectStack.empty()) {
+    auto node = selectStack.back();
+    selectStack.pop_back();
+
+    // 可以着的色
+    std::set<std::string> colors;
+    for (auto &it : reg_colors) {
+      colors.insert(it);
+    }
+
+    // 去掉冲突节点的颜色
+    for (auto adj_node : *adjList[node]) {
+      auto type = node_type[adj_node];
+      if (type == SELECTED_NODE || type == COALESCED_NOED)
+        continue;
+
+      auto root = GetAlias(adj_node);
+      type = node_type[root];
+      if (type == COLORED_NODE || type == PRE_COLORED) {
+        // 邻居有颜色，需要删除该颜色
+        auto it = color_.find(root->NodeInfo());
+        assert(it != color_.end());
+        colors.erase(it->second);
+      }
+    }
+
+    if (colors.empty()) {
+      // 如果没有颜色可以用了，那么它必须被溢出
+      spilledNodes.insert(node);
+      node_type[node] = SPILLED_NODE;
+    } else {
+      coloredNodes.insert(node);
+      node_type[node] = COLORED_NODE;
+      // 随机选一个颜色，比如begin
+      color_.insert(std::make_pair(node->NodeInfo(), *colors.begin()));
+    }
+  }
+
+  // 把合并的节点也加入map
+  // 这只在没有spilled的时候有意义，否则需要重新build
+  if (spilledNodes.empty()) {
+    for (auto &node : coalescedNodes) {
+      auto root = GetAlias(node);
+      auto it = color_.find(root->NodeInfo());
+      assert(it != color_.end());
+      color_.insert(std::make_pair(node->NodeInfo(), it->second));
+    }
+  }
+}
 
 void RegAllocator::RewriteProgram() {}
 

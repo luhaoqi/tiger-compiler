@@ -103,6 +103,8 @@ private:
 
   std::map<live::INodePtr, NodeType> node_type;
   std::map<InodePtrPair, MoveType> move_type;
+  INodeSet added_temps; // 因为溢出因增加的节点
+  std::list<std::string> reg_colors;
 
   static live::LiveGraph AnalyzeLiveness(assem::InstrList *instr_list_);
   void Clear();
@@ -127,6 +129,7 @@ private:
   // 这里修改形参为两个节点方便for循环选择adjacent
   bool Conservative(const live::INodePtr &u,const live::INodePtr &v);
   void Combine(live::INode *u, live::INode *v);
+  void FreezeMoves(live::INode *u);
 
   void Simplify();
   void Coalesce();
