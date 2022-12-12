@@ -345,10 +345,10 @@ bool RegAllocator::Conservative(const live::INodePtr &u,
       s.insert(node);
   }
   TigerLog("Conservative u=%s, v=%s\n", getNodeName(u), getNodeName(v));
-  for (auto &x:s){
+  for (auto &x : s) {
     TigerLog("%s ", getNodeName(x));
   }
-  TigerLog(" %d\n",(int)s.size());
+  TigerLog(" %d\n", (int)s.size());
   return (int)s.size() < K;
 }
 
@@ -587,8 +587,6 @@ void RegAllocator::AssignColors() {
 }
 
 void RegAllocator::RewriteProgram() {
-  auto newInstrList = new assem::InstrList();
-
   int ws = reg_manager->WordSize();
   std::string label = frame_->GetLabel();
   temp::Temp *rsp = reg_manager->StackPointer();
@@ -604,7 +602,9 @@ void RegAllocator::RewriteProgram() {
   // 遍历所有溢出的结点
   for (const auto &node : spilledNodes) {
     auto spilledTemp = node->NodeInfo();
-    frame_->offset -= ws; // 在帧中开辟新的空间
+    // 在帧中开辟新的空间
+    // 需要注意的是，生成汇编还在后面，因为这里跟着改framesize没问题
+    frame_->offset -= ws;
     std::list<assem::Instr *> cur_instr_list;
     for (auto instr : prev_instr_list) {
       auto use_regs = instr->Use(); // src
@@ -619,16 +619,15 @@ void RegAllocator::RewriteProgram() {
                             std::to_string(std::abs(frame_->offset)) +
                             ")(`s0), `d0";
 
-        // 源：新临时寄存器
-        // 目标：帧指针（通过栈指针计算出）-偏移
+        // src:newTem  dst:p%rsp
         auto pre_instr =
             new assem::OperInstr(assem, new temp::TempList({newTemp}),
                                  new temp::TempList({rsp}), nullptr);
         cur_instr_list.push_back(pre_instr);
 
-        // 替换原指令成员变量src_保存的溢出节点
+        // 将ues中原来的spilledNode替换为新的temp
         use_regs->replaceTemp(spilledTemp, newTemp);
-        // 加入列表
+        // 新的temp需要记下来，之后尽量不溢出
         added_temps.insert(newTemp);
       }
       cur_instr_list.push_back(instr);
@@ -639,25 +638,24 @@ void RegAllocator::RewriteProgram() {
         std::string assem = "movq `s0, (" + label + "_framesize-" +
                             std::to_string(std::abs(frame_->offset)) + ")(`d0)";
 
-        // 源：帧指针（通过栈指针计算出）-偏移
-        // 目标：新临时寄存器
+        // src: %rsp dst:newTemp
         assem::Instr *back_instr =
             new assem::OperInstr(assem, new temp::TempList({rsp}),
                                  new temp::TempList({newTemp}), nullptr);
 
         cur_instr_list.push_back(back_instr);
 
-        // 替换原指令成员变量dst_保存的溢出节点
+        // 将def中原来的spilledNode替换为新的temp
         def_regs->replaceTemp(spilledTemp, newTemp);
-        // 加入列表
+        // 新的temp需要记下来，之后尽量不溢出
         added_temps.insert(newTemp);
       }
     }
-
     // 保存这一轮的指令列表
     prev_instr_list = cur_instr_list;
   }
 
+  auto newInstrList = new assem::InstrList();
   for (auto instr : prev_instr_list) {
     newInstrList->Append(instr);
   }
