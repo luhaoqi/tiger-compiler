@@ -19,7 +19,7 @@ using INodeSet = std::set<live::INodePtr>;
 using INodeSetPtr = INodeSet *;
 using MoveSet = std::set<InodePtrPair>;
 using MoveSetPtr = MoveSet *;
-enum NodeType{
+enum NodeType {
   PRE_COLORED,
   INITIAL,
   SIMPLIFY_WORK_LIST,
@@ -30,7 +30,7 @@ enum NodeType{
   COLORED_NODE,
   SELECTED_NODE
 };
-enum MoveType{
+enum MoveType {
   COALESCED_MOVE,
   CONSTRAINED_MOVE,
   FROZEN_MOVE,
@@ -78,13 +78,13 @@ private:
   // 节点集合，每个节点属于且仅属于其中一个
   // initial 其实可以直接从live_graph的节点中取出
   INodeSet pre_colored;
-  INodeSet simplifyWorklist; // 低度数、传送无关的节点
-  INodeSet freezeWorklist;   // 低度数、传送有关的节点
-  INodeSet spillWorklist;    // 高度数的节点
-  INodeSet spilledNodes;     // 实际溢出的节点
-  INodeSet coalescedNodes;   // 已合并的节点
-  INodeSet coloredNodes;     // 已成功着色的节点
-  std::list<live::INodePtr> selectStack;      // 被简化的节点
+  INodeSet simplifyWorklist;             // 低度数、传送无关的节点
+  INodeSet freezeWorklist;               // 低度数、传送有关的节点
+  INodeSet spillWorklist;                // 高度数的节点
+  INodeSet spilledNodes;                 // 实际溢出的节点
+  INodeSet coalescedNodes;               // 已合并的节点
+  INodeSet coloredNodes;                 // 已成功着色的节点
+  std::list<live::INodePtr> selectStack; // 被简化的节点
 
   // move指令集合，每个move指令属于且仅属于其中一个
   MoveSet coalescedMoves;   // 已经合并的move指令
@@ -97,13 +97,13 @@ private:
   std::map<live::INodePtr, MoveSetPtr> moveList; // 每个节点传送相关的指令
   std::map<live::INodePtr, live::INodePtr> alias; // 已合并的节点的代表元
   std::map<live::INodePtr, int> degrees;          // 节点的度数
-  std::set<InodePtrPair> adjSet; // 冲突边集合
-  std::map<live::INodePtr, INodeSetPtr> adjList;               // 冲突邻接表
+  std::set<InodePtrPair> adjSet;                  // 冲突边集合
+  std::map<live::INodePtr, INodeSetPtr> adjList; // 冲突邻接表
   std::map<temp::Temp *, std::string> color_; // 算法为节点选择的颜色
 
   std::map<live::INodePtr, NodeType> node_type;
   std::map<InodePtrPair, MoveType> move_type;
-  INodeSet added_temps; // 因为溢出因增加的节点
+  std::set<temp::Temp *> added_temps; // 因为溢出因增加的节点
   std::list<std::string> reg_colors;
 
   static live::LiveGraph AnalyzeLiveness(assem::InstrList *instr_list_);
@@ -124,10 +124,10 @@ private:
   void AddWorkList(live::INode *node);
   // George条件 对所有节点，要么是低度数与另一个节点要么已经冲突
   // 修改第一个形参为节点，自己for循环取adjacent
-  bool OK(const live::INodePtr &v,const live::INodePtr &r);
+  bool OK(const live::INodePtr &v, const live::INodePtr &r);
   // Briggs条件，高度数节点不超过K
   // 这里修改形参为两个节点方便for循环选择adjacent
-  bool Conservative(const live::INodePtr &u,const live::INodePtr &v);
+  bool Conservative(const live::INodePtr &u, const live::INodePtr &v);
   void Combine(live::INode *u, live::INode *v);
   void FreezeMoves(live::INode *u);
 

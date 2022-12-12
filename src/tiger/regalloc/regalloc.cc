@@ -1,5 +1,6 @@
 #include "tiger/regalloc/regalloc.h"
 
+#include "tiger/frame/temp.h"
 #include "tiger/output/logger.h"
 
 extern frame::RegManager *reg_manager;
@@ -473,7 +474,7 @@ void RegAllocator::SelectSpill() {
   // 还可以用计算权重的方法
   int max = 0;
   for (const auto &node : spillWorklist) {
-    if (added_temps.find(node) != added_temps.end()) {
+    if (added_temps.find(node->NodeInfo()) != added_temps.end()) {
       continue;
     }
     int d = degrees[node];
@@ -544,7 +545,82 @@ void RegAllocator::AssignColors() {
   }
 }
 
-void RegAllocator::RewriteProgram() {}
+void RegAllocator::RewriteProgram() {
+  auto newInstrList = new assem::InstrList();
+
+  int ws = reg_manager->WordSize();
+  std::string label = frame_->GetLabel();
+  temp::Temp *rsp = reg_manager->StackPointer();
+
+  const auto &old_instr_list = instr_list_->GetList();
+
+  // 用来存放上一次更新的汇编指令序列，第一次它就是旧指令序列
+  std::list<assem::Instr *> prev_instr_list;
+  for (auto instr : old_instr_list) {
+    prev_instr_list.push_back(instr);
+  }
+
+  // 遍历所有溢出的结点
+  for (const auto &node : spilledNodes) {
+    auto spilledTemp = node->NodeInfo();
+    frame_->offset -= ws; // 在帧中开辟新的空间
+    std::list<assem::Instr *> cur_instr_list;
+    for (auto instr : prev_instr_list) {
+      auto use_regs = instr->Use(); // src
+      auto def_regs = instr->Def(); // dst
+
+      // 如果溢出的寄存器被这条语句使用了，那么需要再其之前插入一条取数指令
+      if (use_regs->Contain(spilledTemp)) {
+        auto newTemp = temp::TempFactory::NewTemp();
+
+        // movq (fun_framesize-offset)(src), dst
+        std::string assem = "movq (" + label + "_framesize-" +
+                            std::to_string(std::abs(frame_->offset)) +
+                            ")(`s0), `d0";
+
+        // 源：新临时寄存器
+        // 目标：帧指针（通过栈指针计算出）-偏移
+        auto pre_instr =
+            new assem::OperInstr(assem, new temp::TempList({newTemp}),
+                                 new temp::TempList({rsp}), nullptr);
+        cur_instr_list.push_back(pre_instr);
+
+        // 替换原指令成员变量src_保存的溢出节点
+        use_regs->replaceTemp(spilledTemp, newTemp);
+        // 加入列表
+        added_temps.insert(newTemp);
+      }
+      cur_instr_list.push_back(instr);
+      if (def_regs->Contain(spilledTemp)) {
+        auto newTemp = temp::TempFactory::NewTemp();
+
+        // movq src, (fun_framesize-offset)(dst)
+        std::string assem = "movq `s0, (" + label + "_framesize-" +
+                            std::to_string(std::abs(frame_->offset)) + ")(`d0)";
+
+        // 源：帧指针（通过栈指针计算出）-偏移
+        // 目标：新临时寄存器
+        assem::Instr *back_instr =
+            new assem::OperInstr(assem, new temp::TempList({rsp}),
+                                 new temp::TempList({newTemp}), nullptr);
+
+        cur_instr_list.push_back(back_instr);
+
+        // 替换原指令成员变量dst_保存的溢出节点
+        def_regs->replaceTemp(spilledTemp, newTemp);
+        // 加入列表
+        added_temps.insert(newTemp);
+      }
+    }
+
+    // 保存这一轮的指令列表
+    prev_instr_list = cur_instr_list;
+  }
+
+  for (auto instr : prev_instr_list) {
+    newInstrList->Append(instr);
+  }
+}
 
 void RegAllocator::SimplifyInstrList() {
   auto *ret = new assem::InstrList();
@@ -561,9 +637,28 @@ void RegAllocator::SimplifyInstrList() {
       }
     }
     ret->Append(instr);
-  };
+  }
   delete instr_list_;
   instr_list_ = ret;
 }
 
 } // namespace ra
+
+namespace temp {
+void TempList::replaceTemp(temp::Temp *old_temp, temp::Temp *new_temp) {
+  for (auto &iter : temp_list_)
+    if (iter == old_temp) {
+      iter = new_temp;
+    }
+}
+
+bool TempList::Contain(temp::Temp *temp) const {
+  for (auto t : temp_list_) {
+    if (t == temp) {
+      return true;
+    }
+  }
+  return false;
+}
+
+} // namespace temp
