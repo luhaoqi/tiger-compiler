@@ -55,6 +55,20 @@ class DerivedHeap : public TigerHeap {
    * this will be treated as FullGC by default.
    */
   virtual void GC();
+
+  ~DerivedHeap();
+
+  int heap_size;
+  uint8_t *heap;
+  bool *mark;
+
+  struct NODE {
+    int prev, next, size;
+    NODE(int prev, int next, int size) : prev(prev), next(next), size(size) {}
+    NODE() : prev(-1), next(-1), size(-1) {}
+  };
+  int free_list;
+  NODE *node;
 };
 
 } // namespace gc

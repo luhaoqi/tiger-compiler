@@ -19,7 +19,7 @@ Access *Access::AllocLocal(Level *level, bool escape) {
 }
 
 class Cx {
- public:
+public:
   PatchList trues_;
   PatchList falses_;
   tree::Stm *stm_;
@@ -29,14 +29,14 @@ class Cx {
 };
 
 class Exp {
- public:
+public:
   [[nodiscard]] virtual tree::Exp *UnEx() = 0;
   [[nodiscard]] virtual tree::Stm *UnNx() = 0;
   [[nodiscard]] virtual Cx UnCx(err::ErrorMsg *errormsg) = 0;
 };
 
 class ExpAndTy {
- public:
+public:
   tr::Exp *exp_;
   type::Ty *ty_;
 
@@ -44,7 +44,7 @@ class ExpAndTy {
 };
 
 class ExExp : public Exp {
- public:
+public:
   tree::Exp *exp_;
 
   explicit ExExp(tree::Exp *exp) : exp_(exp) {}
@@ -78,7 +78,7 @@ class ExExp : public Exp {
 };
 
 class NxExp : public Exp {
- public:
+public:
   tree::Stm *stm_;
 
   explicit NxExp(tree::Stm *stm) : stm_(stm) {}
@@ -100,7 +100,7 @@ class NxExp : public Exp {
 };
 
 class CxExp : public Exp {
- public:
+public:
   Cx cx_;
 
   CxExp(PatchList trues, PatchList falses, tree::Stm *stm)
@@ -147,8 +147,7 @@ class CxExp : public Exp {
 
 ProgTr::ProgTr(std::unique_ptr<absyn::AbsynTree> absyn_tree,
                std::unique_ptr<err::ErrorMsg> errormsg)
-    : absyn_tree_(std::move(absyn_tree)),
-      errormsg_(std::move(errormsg)),
+    : absyn_tree_(std::move(absyn_tree)), errormsg_(std::move(errormsg)),
       tenv_(std::make_unique<env::TEnv>()),
       venv_(std::make_unique<env::VEnv>()) {
   // total goal: 还需要初始化 main_level
@@ -177,7 +176,7 @@ void ProgTr::Translate() {
       new frame::ProcFrag(main_ExpTy->exp_->UnNx(), main_level_->frame_));
 }
 
-}  // namespace tr
+} // namespace tr
 
 namespace absyn {
 
@@ -367,104 +366,104 @@ tr::ExpAndTy *OpExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   if (left_ExpTy->ty_->IsSameType(type::StringTy::Instance())) {
     // 字符串操作 只支持==/<>
     switch (oper_) {
-      case EQ_OP:
-      case NEQ_OP: {
-        tree::Exp *treeExp = frame::FrameFactory::externalCall(
-            temp::LabelFactory::NamedLabel("string_equal"),
-            new tree::ExpList({left, right}));
-        // not(x) 可以简单的用 1-x 实现 ，也可以在调用not函数
-        if (oper_ == Oper::NEQ_OP)
-          treeExp = new tree::BinopExp(tree::BinOp::MINUS_OP,
-                                       new tree::ConstExp(1), treeExp);
-        op_exp = new tr::ExExp(treeExp);
-        break;
-      }
-      default:
-        // 字符串暂不支持除了等于和不等于之外的运算符
-        assert(false);
-        break;
+    case EQ_OP:
+    case NEQ_OP: {
+      tree::Exp *treeExp = frame::FrameFactory::externalCall(
+          temp::LabelFactory::NamedLabel("string_equal"),
+          new tree::ExpList({left, right}));
+      // not(x) 可以简单的用 1-x 实现 ，也可以在调用not函数
+      if (oper_ == Oper::NEQ_OP)
+        treeExp = new tree::BinopExp(tree::BinOp::MINUS_OP,
+                                     new tree::ConstExp(1), treeExp);
+      op_exp = new tr::ExExp(treeExp);
+      break;
+    }
+    default:
+      // 字符串暂不支持除了等于和不等于之外的运算符
+      assert(false);
+      break;
     }
   } else {
     // 数值操作
-    tree::CjumpStm *stm = nullptr;  // 关系运算
-    tree::Exp *exp = nullptr;       // 数值运算
+    tree::CjumpStm *stm = nullptr; // 关系运算
+    tree::Exp *exp = nullptr;      // 数值运算
 
     switch (oper_) {
-        // & | + - * /
-      case AND_OP:
-        // 仿照 OR_OP
-        {
-          temp::Label *z = temp::LabelFactory::NewLabel();
-          tree::CjumpStm *s1 = new tree::CjumpStm(
-              tree::NE_OP, left, new tree::ConstExp(0), z, nullptr);
-          tree::CjumpStm *s2 = new tree::CjumpStm(
-              tree::NE_OP, right, new tree::ConstExp(0), nullptr, nullptr);
-          tree::Stm *s =
-              new tree::SeqStm(s1, new tree::SeqStm(new tree::LabelStm(z), s2));
-          tr::PatchList trues = tr::PatchList({&s2->true_label_});
-          tr::PatchList falses =
-              tr::PatchList({&s1->false_label_, &s2->false_label_});
-          op_exp = new tr::CxExp(trues, falses, s);
-        }
-        // exp = new tree::BinopExp(tree::BinOp::AND_OP, left, right);
-        break;
-      case OR_OP:
-        // 参考PPT例子
-        {
-          temp::Label *z = temp::LabelFactory::NewLabel();
-          tree::CjumpStm *s1 = new tree::CjumpStm(
-              tree::NE_OP, left, new tree::ConstExp(0), nullptr, z);
-          tree::CjumpStm *s2 = new tree::CjumpStm(
-              tree::NE_OP, right, new tree::ConstExp(0), nullptr, nullptr);
-          tree::Stm *s =
-              new tree::SeqStm(s1, new tree::SeqStm(new tree::LabelStm(z), s2));
-          tr::PatchList trues =
-              tr::PatchList({&s1->true_label_, &s2->true_label_});
-          tr::PatchList falses = tr::PatchList({&s2->false_label_});
-          op_exp = new tr::CxExp(trues, falses, s);
-        }
-        // exp = new tree::BinopExp(tree::BinOp::OR_OP, left, right);
-        break;
-      case PLUS_OP:
-        exp = new tree::BinopExp(tree::BinOp::PLUS_OP, left, right);
-        break;
-      case MINUS_OP:
-        exp = new tree::BinopExp(tree::BinOp::MINUS_OP, left, right);
-        break;
-      case TIMES_OP:
-        exp = new tree::BinopExp(tree::BinOp::MUL_OP, left, right);
-        break;
-      case DIVIDE_OP:
-        exp = new tree::BinopExp(tree::BinOp::DIV_OP, left, right);
-        break;
-        // relation operation: == != < <= > >=
-      case EQ_OP:
-        stm = new tree::CjumpStm(tree::RelOp::EQ_OP, left, right, nullptr,
-                                 nullptr);
-        break;
-      case NEQ_OP:
-        stm = new tree::CjumpStm(tree::RelOp::NE_OP, left, right, nullptr,
-                                 nullptr);
-        break;
-      case LT_OP:
-        stm = new tree::CjumpStm(tree::RelOp::LT_OP, left, right, nullptr,
-                                 nullptr);
-        break;
-      case LE_OP:
-        stm = new tree::CjumpStm(tree::RelOp::LE_OP, left, right, nullptr,
-                                 nullptr);
-        break;
-      case GT_OP:
-        stm = new tree::CjumpStm(tree::RelOp::GT_OP, left, right, nullptr,
-                                 nullptr);
-        break;
-      case GE_OP:
-        stm = new tree::CjumpStm(tree::RelOp::GE_OP, left, right, nullptr,
-                                 nullptr);
-        break;
-      default:
-        assert(false);
-        break;
+      // & | + - * /
+    case AND_OP:
+      // 仿照 OR_OP
+      {
+        temp::Label *z = temp::LabelFactory::NewLabel();
+        tree::CjumpStm *s1 = new tree::CjumpStm(
+            tree::NE_OP, left, new tree::ConstExp(0), z, nullptr);
+        tree::CjumpStm *s2 = new tree::CjumpStm(
+            tree::NE_OP, right, new tree::ConstExp(0), nullptr, nullptr);
+        tree::Stm *s =
+            new tree::SeqStm(s1, new tree::SeqStm(new tree::LabelStm(z), s2));
+        tr::PatchList trues = tr::PatchList({&s2->true_label_});
+        tr::PatchList falses =
+            tr::PatchList({&s1->false_label_, &s2->false_label_});
+        op_exp = new tr::CxExp(trues, falses, s);
+      }
+      // exp = new tree::BinopExp(tree::BinOp::AND_OP, left, right);
+      break;
+    case OR_OP:
+      // 参考PPT例子
+      {
+        temp::Label *z = temp::LabelFactory::NewLabel();
+        tree::CjumpStm *s1 = new tree::CjumpStm(
+            tree::NE_OP, left, new tree::ConstExp(0), nullptr, z);
+        tree::CjumpStm *s2 = new tree::CjumpStm(
+            tree::NE_OP, right, new tree::ConstExp(0), nullptr, nullptr);
+        tree::Stm *s =
+            new tree::SeqStm(s1, new tree::SeqStm(new tree::LabelStm(z), s2));
+        tr::PatchList trues =
+            tr::PatchList({&s1->true_label_, &s2->true_label_});
+        tr::PatchList falses = tr::PatchList({&s2->false_label_});
+        op_exp = new tr::CxExp(trues, falses, s);
+      }
+      // exp = new tree::BinopExp(tree::BinOp::OR_OP, left, right);
+      break;
+    case PLUS_OP:
+      exp = new tree::BinopExp(tree::BinOp::PLUS_OP, left, right);
+      break;
+    case MINUS_OP:
+      exp = new tree::BinopExp(tree::BinOp::MINUS_OP, left, right);
+      break;
+    case TIMES_OP:
+      exp = new tree::BinopExp(tree::BinOp::MUL_OP, left, right);
+      break;
+    case DIVIDE_OP:
+      exp = new tree::BinopExp(tree::BinOp::DIV_OP, left, right);
+      break;
+      // relation operation: == != < <= > >=
+    case EQ_OP:
+      stm =
+          new tree::CjumpStm(tree::RelOp::EQ_OP, left, right, nullptr, nullptr);
+      break;
+    case NEQ_OP:
+      stm =
+          new tree::CjumpStm(tree::RelOp::NE_OP, left, right, nullptr, nullptr);
+      break;
+    case LT_OP:
+      stm =
+          new tree::CjumpStm(tree::RelOp::LT_OP, left, right, nullptr, nullptr);
+      break;
+    case LE_OP:
+      stm =
+          new tree::CjumpStm(tree::RelOp::LE_OP, left, right, nullptr, nullptr);
+      break;
+    case GT_OP:
+      stm =
+          new tree::CjumpStm(tree::RelOp::GT_OP, left, right, nullptr, nullptr);
+      break;
+    case GE_OP:
+      stm =
+          new tree::CjumpStm(tree::RelOp::GE_OP, left, right, nullptr, nullptr);
+      break;
+    default:
+      assert(false);
+      break;
     }
     if (stm) {
       // 现在两个标签都还是nullptr，这里传入地址，在UnEx中会DoPatch
@@ -473,7 +472,7 @@ tr::ExpAndTy *OpExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     } else if (exp) {
       // 加减乘除
       op_exp = new tr::ExExp(exp);
-    } else  // 否则就是 & 和 | 已经有op_exp
+    } else // 否则就是 & 和 | 已经有op_exp
       assert(op_exp);
   }
   return new tr::ExpAndTy(op_exp, type::IntTy::Instance());
@@ -503,7 +502,11 @@ tr::ExpAndTy *RecordExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab5 code here */
   // 思路见书本p118 7.2.11 记录和数组的创建
+  //  printf("translate typ_=%s\n",typ_->Name().c_str());
   type::Ty *ty = tenv->Look(typ_)->ActualTy();
+  auto record_ty = dynamic_cast<type::RecordTy *>(ty);
+  // 必须是record
+  assert(record_ty);
   std::vector<tr::Exp *> exp_list;
 
   // record 有很多 fields 初始化的每个内容都需要translate
@@ -520,8 +523,11 @@ tr::ExpAndTy *RecordExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   // 1. 调用库函数申请内存
   // 因为每个field大小都是一样的，为一个wordsize
   // 所以申请的大小是域的数量，每个域用一个指针指向
-  auto *args = new tree::ExpList({new tree::ConstExp(
-      reg_manager->WordSize() * static_cast<int>(exp_list.size()))});
+  //  printf("%p\n", record_ty->str_label);
+  auto *args =
+      new tree::ExpList({new tree::ConstExp(reg_manager->WordSize() *
+                                            static_cast<int>(exp_list.size())),
+                         new tree::NameExp(record_ty->str_label)});
   // 2. move r, pointer_record
   tree::Stm *stm = new tree::MoveStm(
       new tree::TempExp(r),
@@ -550,7 +556,7 @@ tr::ExpAndTy *SeqExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   for (absyn::Exp *exp : seqs) {
     tr::ExpAndTy *expAndTy = exp->Translate(venv, tenv, level, label, errormsg);
     exp_list.push_back(expAndTy->exp_);
-    ty = expAndTy->ty_;  // 取最后一个ty
+    ty = expAndTy->ty_; // 取最后一个ty
   }
 
   tr::Exp *res = new tr::ExExp(new tree::ConstExp(0));
@@ -927,7 +933,8 @@ tr::Exp *VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   tr::Access *access;
   // 这里区分Record是为了简化lab7 GC的任务
   // 把所有的record和array spill到栈上而不是保存到寄存器
-  if (typeid(*init_ty) == typeid(type::RecordTy) || typeid(*init_ty) == typeid(type::ArrayTy))
+  if (typeid(*init_ty) == typeid(type::RecordTy) ||
+      typeid(*init_ty) == typeid(type::ArrayTy))
     access = tr::Access::AllocLocal(level, true);
   else
     access = tr::Access::AllocLocal(level, escape_);
@@ -956,8 +963,48 @@ tr::Exp *TypeDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     auto ty = tenv->Look(nameTy->name_);
     if (ty) {
       auto NameTy_ = dynamic_cast<type::NameTy *>(ty);
-      assert(NameTy_);  // 不能为nullptr
+      assert(NameTy_); // 不能为nullptr
       NameTy_->ty_ = nameTy->ty_->Translate(tenv, errormsg);
+    }
+  }
+  // 在处理好所有类型之后添加一些RecordTy的信息
+  for (const auto &nameTy : nameTyList) {
+    auto ty = tenv->Look(nameTy->name_);
+    if (ty) {
+      auto NameTy_ = dynamic_cast<type::NameTy *>(ty);
+      assert(NameTy_); // 不能为nullptr
+      NameTy_->ty_ = nameTy->ty_->Translate(tenv, errormsg);
+      auto actual_ty = NameTy_->ty_->ActualTy();
+      if (typeid(*actual_ty) == typeid(type::RecordTy)) {
+        // RecordTy添加一个string
+        auto record_ty = dynamic_cast<type::RecordTy *>(actual_ty);
+        std::string descriptor;
+        for (auto &field : record_ty->fields_->GetList()) {
+          auto field_ty = field->ty_->ActualTy();
+          // 是pointer的类型就是1,否则为0
+          if (typeid(*field_ty) == typeid(type::RecordTy) ||
+              typeid(*field_ty) == typeid(type::ArrayTy))
+            descriptor += "1";
+          else
+            descriptor += "0";
+        }
+        record_ty->gc_descriptor = descriptor;
+        // 保存descriptor在汇编中的label
+        record_ty->str_label = temp::LabelFactory::NewLabel();
+        //        printf("name=%s  label=%p des=%s\n",
+        //        nameTy->name_->Name().c_str(),
+        //               record_ty->str_label, descriptor.c_str());
+        // 把字符串存到片段中
+        frags->PushBack(new frame::StringFrag(record_ty->str_label,
+                                              record_ty->gc_descriptor));
+
+        type::Ty *tmp = tenv->Look(nameTy->name_)->ActualTy();
+        auto tt = dynamic_cast<type::RecordTy *>(tmp);
+        // 必须是record
+        assert(tt);
+        //        printf("label=%p des=%s\n", tt->str_label,
+        //        tt->gc_descriptor.c_str());
+      }
     }
   }
   // 随便返回一个，为了和VarDec保持一致
@@ -989,4 +1036,4 @@ type::Ty *ArrayTy::Translate(env::TEnvPtr tenv, err::ErrorMsg *errormsg) const {
   return type::VoidTy::Instance();
 }
 
-}  // namespace absyn
+} // namespace absyn

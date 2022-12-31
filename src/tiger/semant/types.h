@@ -1,6 +1,7 @@
 #ifndef TIGER_SEMANT_TYPES_H_
 #define TIGER_SEMANT_TYPES_H_
 
+#include "tiger/frame/temp.h"
 #include "tiger/symbol/symbol.h"
 #include <list>
 
@@ -54,6 +55,8 @@ private:
 class RecordTy : public Ty {
 public:
   FieldList *fields_;
+  std::string gc_descriptor;
+  temp::Label *str_label = nullptr;
 
   explicit RecordTy(FieldList *fields) : fields_(fields) {}
 };

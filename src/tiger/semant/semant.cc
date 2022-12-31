@@ -36,7 +36,7 @@ type::Ty *FieldVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                int labelcount, err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
   type::Ty *type = var_->SemAnalyze(venv, tenv, labelcount, errormsg);
-  type = type->ActualTy();  // TODO: test remove
+  type = type->ActualTy(); // TODO: test remove
   if (typeid(*type) != typeid(type::RecordTy)) {
     // not a record type, error!
     errormsg->Error(pos_, "not a record type");
@@ -58,9 +58,9 @@ type::Ty *SubscriptVar::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
                                    err::ErrorMsg *errormsg) const {
   /* TODO: Put your lab4 code here */
   type::Ty *type = var_->SemAnalyze(venv, tenv, labelcount, errormsg);
-  type = type->ActualTy();  // TODO: test remove
+  type = type->ActualTy(); // TODO: test remove
   type::Ty *expTy = subscript_->SemAnalyze(venv, tenv, labelcount, errormsg);
-  expTy = expTy->ActualTy();  // TODO: test remove
+  expTy = expTy->ActualTy(); // TODO: test remove
   if (typeid(*expTy) != typeid(type::IntTy)) {
     // check if subscript is int
     errormsg->Error(pos_, "subscript must be integer");
@@ -113,7 +113,7 @@ type::Ty *CallExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
     // const & 减少开销
     const auto &formals = fun->formals_->GetList();
     const auto &res = fun->result_;
-    bool flag = true;  // 标记是否有错误
+    bool flag = true; // 标记是否有错误
     const auto &args = args_->GetList();
     std::list<type::Ty *> args_ty;
     // 先把表达式都算出来放到args_ty容器中
@@ -141,7 +141,8 @@ type::Ty *CallExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
       flag = false;
     }
     // 没有任何错误，返回函数返回值类型
-    if (flag) return res->ActualTy();
+    if (flag)
+      return res->ActualTy();
   } else {
     // ERROR! not found!
     errormsg->Error(pos_, "undefined function %s", func_->Name().data());
@@ -158,31 +159,31 @@ type::Ty *OpExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
   type::Ty *right_ty =
       right_->SemAnalyze(venv, tenv, labelcount, errormsg)->ActualTy();
   switch (oper_) {
-    case PLUS_OP:
-    case MINUS_OP:
-    case DIVIDE_OP:
-    case TIMES_OP:
-    case AND_OP:
-    case OR_OP:
-      // 加减乘除 与 & | 操作左右操作数必须是int
-      if (typeid(*left_ty) != typeid(type::IntTy)) {
-        errormsg->Error(left_->pos_, "integer required");
-      }
-      if (typeid(*right_ty) != typeid(type::IntTy)) {
-        errormsg->Error(right_->pos_, "integer required");
-      }
+  case PLUS_OP:
+  case MINUS_OP:
+  case DIVIDE_OP:
+  case TIMES_OP:
+  case AND_OP:
+  case OR_OP:
+    // 加减乘除 与 & | 操作左右操作数必须是int
+    if (typeid(*left_ty) != typeid(type::IntTy)) {
+      errormsg->Error(left_->pos_, "integer required");
+    }
+    if (typeid(*right_ty) != typeid(type::IntTy)) {
+      errormsg->Error(right_->pos_, "integer required");
+    }
+    return type::IntTy::Instance();
+    break;
+  case ABSYN_OPER_COUNT:
+    assert(false);
+    break;
+  default:
+    // 否则就是比较操作，只需要类型相等
+    if (!left_ty->IsSameType(right_ty)) {
+      errormsg->Error(pos_, "same type required");
       return type::IntTy::Instance();
-      break;
-    case ABSYN_OPER_COUNT:
-      assert(false);
-      break;
-    default:
-      // 否则就是比较操作，只需要类型相等
-      if (!left_ty->IsSameType(right_ty)) {
-        errormsg->Error(pos_, "same type required");
-        return type::IntTy::Instance();
-      }
-      break;
+    }
+    break;
   }
   return DEFULT_ERROR_TYPR;
 }
@@ -201,9 +202,9 @@ type::Ty *RecordExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
       errormsg->Error(pos_, std::string("not a record type"));
       return ty;
     } else {
-      auto args = fields_->GetList();  // Given Efields
+      auto args = fields_->GetList(); // Given Efields
       auto formals = dynamic_cast<type::RecordTy *>(ty)
-                         ->fields_->GetList();  // declared Fields
+                         ->fields_->GetList(); // declared Fields
       // check the two list
       auto it1 = args.begin();
       auto it2 = formals.begin();
@@ -220,8 +221,10 @@ type::Ty *RecordExp::SemAnalyze(env::VEnvPtr venv, env::TEnvPtr tenv,
           errormsg->Error((*it1)->exp_->pos_, "unmatched assign exp");
       }
       // 比较数量
-      if (it1 != args.end()) errormsg->Error(pos_, "too many Efields");
-      if (it2 != formals.end()) errormsg->Error(pos_, "too few Efields");
+      if (it1 != args.end())
+        errormsg->Error(pos_, "too many Efields");
+      if (it2 != formals.end())
+        errormsg->Error(pos_, "too few Efields");
       // 即使参数都对不上，还是当做对上名字的RecordTy返回
       return dynamic_cast<type::RecordTy *>(ty);
     }
@@ -646,7 +649,7 @@ type::Ty *ArrayTy::SemAnalyze(env::TEnvPtr tenv,
   return type::VoidTy::Instance();
 }
 
-}  // namespace absyn
+} // namespace absyn
 
 namespace sem {
 
@@ -656,4 +659,4 @@ void ProgSem::SemAnalyze() {
   absyn_tree_->SemAnalyze(venv_.get(), tenv_.get(), errormsg_.get());
 }
 
-}  // namespace sem
+} // namespace sem
