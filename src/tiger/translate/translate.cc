@@ -921,10 +921,16 @@ tr::Exp *VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   if (typ_ != nullptr) {
     // record 可能 init 为 nil
     // 直接用声明的类型
-    init_ty == tenv->Look(typ_)->ActualTy();
+    init_ty = tenv->Look(typ_)->ActualTy();
   }
   // allocLocal for Access
-  tr::Access *access = tr::Access::AllocLocal(level, escape_);
+  tr::Access *access;
+  // 这里区分Record是为了简化lab7 GC的任务
+  // 把所有的record和array spill到栈上而不是保存到寄存器
+  if (typeid(*init_ty) == typeid(type::RecordTy) || typeid(*init_ty) == typeid(type::ArrayTy))
+    access = tr::Access::AllocLocal(level, true);
+  else
+    access = tr::Access::AllocLocal(level, escape_);
   // add variable to venv
   venv->Enter(var_, new env::VarEntry(access, init_ty));
 
