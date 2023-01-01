@@ -605,6 +605,7 @@ void RegAllocator::RewriteProgram() {
     // 在帧中开辟新的空间
     // 需要注意的是，生成汇编还在后面，因为这里跟着改framesize没问题
     frame_->offset -= ws;
+    frame_->pointer_map += "2";
     std::list<assem::Instr *> cur_instr_list;
     for (auto instr : prev_instr_list) {
       auto use_regs = instr->Use(); // src

@@ -13,9 +13,9 @@ extern frame::RegManager *reg_manager;
 
 namespace tr {
 
-Access *Access::AllocLocal(Level *level, bool escape) {
+Access *Access::AllocLocal(Level *level, bool escape, bool isPointer) {
   /* TODO: Put your lab5 code here */
-  return new Access(level, level->frame_->allocLocal(escape));
+  return new Access(level, level->frame_->allocLocal(escape, isPointer));
 }
 
 class Cx {
@@ -154,7 +154,7 @@ ProgTr::ProgTr(std::unique_ptr<absyn::AbsynTree> absyn_tree,
   // 1. 初始化main_label 使用NamedLabel自定义label
   temp::Label *main_label = temp::LabelFactory::NamedLabel("tigermain");
   // 2. 初始化main_frame
-  frame::Frame *main_frame = frame::FrameFactory::NewFrame(main_label, {});
+  frame::Frame *main_frame = frame::FrameFactory::NewFrame(main_label, {}, {});
   // 3. 初始化main_level_
   main_level_ = std::make_unique<Level>(main_frame, nullptr);
 }
@@ -703,7 +703,7 @@ tr::ExpAndTy *ForExp::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   tr::ExpAndTy *hi_ExpTy = hi_->Translate(venv, tenv, level, label, errormsg);
 
   // 循环变量的escape属性自己存储，在find escape中进行设置
-  tr::Access *access = tr::Access::AllocLocal(level, escape_);
+  tr::Access *access = tr::Access::AllocLocal(level, escape_, false);
   // 最后设置一个readonly属性(只在这里用到)
   venv->Enter(var_, new env::VarEntry(access, lo_ExpTy->ty_->ActualTy(), true));
 
@@ -864,8 +864,20 @@ tr::Exp *FunctionDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
     for (auto &field : fun->params_->GetList()) {
       escapes.push_back(field->escape_);
     }
+    // create isPointer List
+    std::list<bool> isPointerList;
+    for (auto &ty : formalTyList->GetList()) {
+      auto ac_ty = ty->ActualTy();
+      if (typeid(*ac_ty) == typeid(type::RecordTy) ||
+          typeid(*ac_ty) == typeid(type::ArrayTy)) {
+        isPointerList.push_back(true);
+      } else
+        isPointerList.push_back(false);
+    }
+    assert(isPointerList.size() == escapes.size());
     // create level
-    tr::Level *fun_level = tr::Level::NewLevel(level, fun_label, escapes);
+    tr::Level *fun_level =
+        tr::Level::NewLevel(level, fun_label, escapes, isPointerList);
 
     venv->Enter(fun->name_, new env::FunEntry(fun_level, fun_label,
                                               formalTyList, resultTy));
@@ -935,9 +947,9 @@ tr::Exp *VarDec::Translate(env::VEnvPtr venv, env::TEnvPtr tenv,
   // 把所有的record和array spill到栈上而不是保存到寄存器
   if (typeid(*init_ty) == typeid(type::RecordTy) ||
       typeid(*init_ty) == typeid(type::ArrayTy))
-    access = tr::Access::AllocLocal(level, true);
+    access = tr::Access::AllocLocal(level, escape_, true);
   else
-    access = tr::Access::AllocLocal(level, escape_);
+    access = tr::Access::AllocLocal(level, escape_, false);
   // add variable to venv
   venv->Enter(var_, new env::VarEntry(access, init_ty));
 

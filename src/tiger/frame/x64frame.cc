@@ -7,11 +7,14 @@ namespace frame {
 // InFrameAccess,InRegAccess,X64Frame的声明都放到x64frame.h
 // 这样才有代码提示
 
-X64Frame::X64Frame(temp::Label *name, const std::list<bool> &formals)
+X64Frame::X64Frame(temp::Label *name, const std::list<bool> &formals,
+                   const std::list<bool> &isPointerList)
     : Frame(name) {
   // 根据传入的形参的逃逸属性allocLocal
+  auto it = isPointerList.begin();
   for (auto escape : formals) {
-    formals_.push_back(allocLocal(escape));
+    formals_.push_back(allocLocal(escape, *(it)));
+    it++;
   }
 }
 
@@ -24,6 +27,7 @@ void X64Frame::setViewShift(const std::list<bool> &escapes) {
   auto it = reg_list.begin();
 
   int i = 0; // 第几个超过Maxargs的参数
+             //  int j = 0;
   const int ws = reg_manager->WordSize();
   temp::Temp *FP = reg_manager->FramePointer();
 
@@ -37,6 +41,13 @@ void X64Frame::setViewShift(const std::list<bool> &escapes) {
     // src is decided by if it's first 6 args
     if (it != reg_list.end()) {
       src = new tree::TempExp(*it);
+      //      j++;
+      //      if (j == 3) {
+      //        printf("3rd temp: %s\n",typeid(*access).name());
+      ////        auto ac = dynamic_cast<InFrameAccess *>(access);
+      //        auto str = reg_manager->temp_map_->Look(*it);
+      //        printf("3rd temp:%s\n", str->c_str());
+      //      }
       it++;
     } else {
       // 帧指针现在指向return address
@@ -58,23 +69,32 @@ void X64Frame::setViewShift(const std::list<bool> &escapes) {
 
 // create a new frame
 Frame *FrameFactory::NewFrame(temp::Label *label,
-                              const std::list<bool> &formals) {
-  frame::X64Frame *f = new X64Frame(label, formals);
+                              const std::list<bool> &formals,
+                              const std::list<bool> &isPointerList) {
+  frame::X64Frame *f = new X64Frame(label, formals, isPointerList);
   f->setViewShift(formals);
   return f;
 }
 
 // alloc local variable in frame
 // @escape : if the var is escape
-frame::Access *X64Frame::allocLocal(bool escape) {
+frame::Access *X64Frame::allocLocal(bool escape, bool isPointer) {
   frame::Access *local;
-  if (escape) {
-    // 如果是逃逸变量，申请内存空间，栈帧向低地址方向移动一个wordsize
+  if (isPointer) {
+    // Pointer全部spill，escape=true
     offset -= reg_manager->WordSize();
     local = new InFrameAccess(offset);
+    pointer_map += "1";
   } else {
-    // 如果不是逃逸变量，直接使用寄存器
-    local = new InRegAccess(temp::TempFactory::NewTemp());
+    if (escape) {
+      pointer_map += "0";
+      // 如果是逃逸变量，申请内存空间，栈帧向低地址方向移动一个wordsize
+      offset -= reg_manager->WordSize();
+      local = new InFrameAccess(offset);
+    } else {
+      // 如果不是逃逸变量，直接使用寄存器
+      local = new InRegAccess(temp::TempFactory::NewTemp());
+    }
   }
   return local;
 }
@@ -106,20 +126,29 @@ assem::Proc *FrameFactory::ProcEntryExit3(frame::Frame *f,
   int size_for_more_args =
       std::max(f->maxArgs - argRegs, 0) * reg_manager->WordSize();
 
+  // 因为GC需要,最后要把metadata的地址压入栈
+  // framesize+=8
+  int framesize = size_for_more_args - f->offset + 8;
   std::string prolog;
   // .set xx_framesize, $size
   sprintf(instr, ".set %s_framesize, %d\n", f->name_->Name().c_str(),
-          size_for_more_args - f->offset);
+          framesize);
   prolog = std::string(instr);
   // xx:
   sprintf(instr, "%s:\n", f->name_->Name().c_str());
   prolog.append(std::string(instr));
   // subq $size, %rsp
-  sprintf(instr, "subq $%d, %%rsp\n", size_for_more_args - f->offset);
+  sprintf(instr, "subq $%d, %%rsp\n", framesize);
+  prolog.append(std::string(instr));
+  // leaq xx_matadata(%rip), %r10
+  sprintf(instr, "leaq %s_metadata(%%rip), %%r10\n", f->name_->Name().c_str());
+  prolog.append(std::string(instr));
+  // movq %r10, (%rsp)
+  sprintf(instr, "movq %%r10, (%%rsp)\n");
   prolog.append(std::string(instr));
 
   // addq $size, %rsp
-  sprintf(instr, "addq $%d, %%rsp\n", size_for_more_args - f->offset);
+  sprintf(instr, "addq $%d, %%rsp\n", framesize);
   std::string epilog = std::string(instr);
   // retq
   epilog.append(std::string("retq\n"));

@@ -17,10 +17,11 @@ class ExpAndTy;
 class Level;
 
 class PatchList {
- public:
+public:
   // 用某一个Label填充所有true/false的位置
   void DoPatch(temp::Label *label) {
-    for (auto &patch : patch_list_) *patch = label;
+    for (auto &patch : patch_list_)
+      *patch = label;
   }
 
   static PatchList JoinPatch(const PatchList &first, const PatchList &second) {
@@ -39,22 +40,22 @@ class PatchList {
     return patch_list_;
   }
 
- private:
+private:
   std::list<temp::Label **> patch_list_;
 };
 
 class Access {
- public:
+public:
   Level *level_;
   frame::Access *access_;
 
   Access(Level *level, frame::Access *access)
       : level_(level), access_(access) {}
-  static Access *AllocLocal(Level *level, bool escape);
+  static Access *AllocLocal(Level *level, bool escape, bool isPointer);
 };
 
 class Level {
- public:
+public:
   frame::Frame *frame_;
   Level *parent_;
 
@@ -62,17 +63,20 @@ class Level {
   Level(frame::Frame *frame, Level *parent) : frame_(frame), parent_(parent) {}
 
   static Level *NewLevel(tr::Level *parent, temp::Label *name,
-                         const std::list<bool> &formals) {
+                         const std::list<bool> &formals,
+                         const std::list<bool> &isPointer) {
     auto list = formals;
+    auto isPointerList = isPointer;
     // 添加static link，static link需要放在stack上，所以escape
     list.push_front(true);
-    frame::Frame *f = frame::FrameFactory::NewFrame(name, list);
+    isPointerList.push_front(false);
+    frame::Frame *f = frame::FrameFactory::NewFrame(name, list, isPointerList);
     return new Level(f, parent);
   }
 };
 
 class ProgTr {
- public:
+public:
   // TODO: Put your lab5 code here */
 
   /**
@@ -91,7 +95,7 @@ class ProgTr {
   ProgTr(std::unique_ptr<absyn::AbsynTree> absyn_tree,
          std::unique_ptr<err::ErrorMsg> errormsg);
 
- private:
+private:
   std::unique_ptr<absyn::AbsynTree> absyn_tree_;
   std::unique_ptr<err::ErrorMsg> errormsg_;
   std::unique_ptr<Level> main_level_;
@@ -103,6 +107,6 @@ class ProgTr {
   void FillBaseTEnv();
 };
 
-}  // namespace tr
+} // namespace tr
 
 #endif
