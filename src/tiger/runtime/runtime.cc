@@ -43,9 +43,12 @@ EXTERNC uint64_t MaxFree() {
 }
 
 EXTERNC long *init_array(int size, long init) {
-  size += 16; // 留出descriptor的空间
+
   int i;
   uint64_t allocate_size = size * sizeof(long);
+  allocate_size += 16; // 留出descriptor的空间
+  //  printf("init_array size=%d init=%ld allocsize=%llu\n", size, init,
+  //         allocate_size);
   long *a = (long *)tiger_heap->Allocate(allocate_size);
   if (!a) {
     tiger_heap->GC();
@@ -55,16 +58,11 @@ EXTERNC long *init_array(int size, long init) {
   // 这里lab不考虑array中也是pointer的情况
   long *b = a + 2;
   a[0] = 1;
-  a[1] = size;
+  a[1] = allocate_size;
   for (i = 0; i < size; i++)
     b[i] = init;
   return b;
 }
-
-struct string {
-  int length;
-  unsigned char chars[1];
-};
 
 EXTERNC int *alloc_record(int size, struct string *descriptor) {
   size += 16;
@@ -79,11 +77,11 @@ EXTERNC int *alloc_record(int size, struct string *descriptor) {
   a = p + 4;
   for (i = 0; i < size; i += sizeof(int))
     *p++ = 0;
-  // array descriptor: [0][addr] | [field 1] ...
+  // array descriptor: [2][addr] | [field 1] ...
   // addr 表示descriptor的地址
-  long long *t = (long long *)p;
-  t[0] = 0;
-  t[1] = (long long)descriptor;
+  uint64_t *t = ((uint64_t *)a - 2);
+  t[0] = 2;
+  t[1] = (uint64_t)descriptor;
 
   //  struct string *s = (struct string *)t[1];
   //  printf("test len=%d s=%s\n", s->length, s->chars);

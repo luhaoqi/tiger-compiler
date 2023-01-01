@@ -10,8 +10,8 @@ extern uint64_t GLOBAL_GC_ROOTS;
 
 // Used to get the first tiger stack, define a sp like uint64_t *sp; and invoke GET_TIGER_STACK(sp) will work
 #define GET_TIGER_STACK(sp) do {\
-  unsigned long rbp; \
-  GET_RBP(rbp); \ 
+  uint64_t rbp; \
+  GET_RBP(rbp); \
   sp = ((uint64_t*)((*(uint64_t*)rbp) + sizeof(uint64_t))); \
 } while(0)
 

@@ -20,6 +20,23 @@ void AssemGen::GenAssem(bool need_ra) {
   phase = frame::Frag::String;
   fprintf(out_, ".section .rodata\n");
   for (auto &&frag : frags->GetList()) frag->OutputAssem(out_, phase, need_ra);
+
+  // Output frame metadata
+  for (auto &&frag : frags->GetList()){
+    if (typeid(*frag) == typeid(frame::ProcFrag)){
+      auto f = dynamic_cast<frame::ProcFrag *>(frag);
+      // 最后一个代表自己，也要存到栈中
+      f->frame_->pointer_map += "0";
+      auto str_ = f->frame_->pointer_map;
+      std::string label_name = f->frame_->name_->Name() + "_metadata";
+      fprintf(out_, ".global %s\n", label_name.c_str());
+      fprintf(out_, "%s:\n", label_name.c_str());
+      fprintf(out_, ".string \"");
+      // metadata 都是0/1 不用区分特殊字符
+      fprintf(out_, "%s", str_.c_str());
+      fprintf(out_, "\"\n");
+    }
+  }
 }
 
 }  // namespace output

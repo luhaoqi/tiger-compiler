@@ -3,6 +3,11 @@
 #include "heap.h"
 #include <vector>
 
+struct string {
+  int length;
+  unsigned char chars[1];
+};
+
 namespace gc {
 
 class DerivedHeap : public TigerHeap {
@@ -69,6 +74,7 @@ class DerivedHeap : public TigerHeap {
   };
   int free_list;
   NODE *node;
+
 };
 
 } // namespace gc
