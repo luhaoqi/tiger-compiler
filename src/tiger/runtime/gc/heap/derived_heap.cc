@@ -109,7 +109,8 @@ void DerivedHeap::DFS(uint64_t value) {
   //         *((uint64_t **)value + 2));
   int size = str->length * 8;
   int from = value - (uint64_t)heap;
-  mark_chunk(from - 16, size);
+  // 注意这里的size要加上16 跟array不同 和descriptor一致！
+  mark_chunk(from - 16, size + 16);
   // 根据record的descriptor检查每个field
   for (int i = 0; i < str->length; i++) {
     // 可能是pointer
@@ -146,7 +147,7 @@ void DerivedHeap::check_pointer(uint64_t value) {
 }
 
 void DerivedHeap::GC() {
-  //  printf("come in GC!\n");
+  //  printf("\ncome in GC!\n");
   uint64_t *sp;
   //  GET_TIGER_STACK(sp);
 
