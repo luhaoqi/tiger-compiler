@@ -27,6 +27,11 @@ void AssemGen::GenAssem(bool need_ra) {
       auto f = dynamic_cast<frame::ProcFrag *>(frag);
       // 最后一个代表自己，也要存到栈中
       f->frame_->pointer_map += "0";
+      // 第一个Y表示tigermain N表示不是
+      if (f->frame_->name_->Name() == "tigermain")
+        f->frame_->pointer_map = "Y" + f->frame_->pointer_map;
+      else
+        f->frame_->pointer_map = "N" + f->frame_->pointer_map;
       auto str_ = f->frame_->pointer_map;
       std::string label_name = f->frame_->name_->Name() + "_metadata";
       fprintf(out_, ".global %s\n", label_name.c_str());

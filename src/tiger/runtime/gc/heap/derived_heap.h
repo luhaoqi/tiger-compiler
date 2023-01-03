@@ -75,6 +75,10 @@ class DerivedHeap : public TigerHeap {
   int free_list;
   NODE *node;
 
+  void check_pointer(uint64_t value);
+  void mark_chunk(int start, int size);
+  void DFS(uint64_t value);
+
 };
 
 } // namespace gc

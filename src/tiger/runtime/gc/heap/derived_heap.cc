@@ -85,6 +85,66 @@ uint64_t DerivedHeap::MaxFree() const {
   return max_block;
 }
 
+void DerivedHeap::mark_chunk(int start, int size) {
+  // 标记的一定是一个有意义的chunk(record,array)
+  // 所以可以通过第一个来判断是否标记
+  int end = start + size;
+  if (!mark[start]) {
+    // 防止重复标记
+    for (int j = start; j < end; j++) {
+      mark[j] = true;
+    }
+  }
+}
+
+// value其实可以叫pos，只是挪进来不想改名了
+void DerivedHeap::DFS(uint64_t value) {
+  // 找到root后进行DFS
+  // 本Lab array不用考虑，不会有pointer，只需要考虑record中的pointer
+  // 放在record的指针前面8byte
+  struct string *str = *((struct string **)value - 1);
+  //  printf("find record: length=%d metadata=%s\n", str->length, str->chars);
+  //  printf("find alive node: pos=%p key=%llu left=%p right=%p\n",
+  //         (uint64_t *)value, *((uint64_t *)value), *((uint64_t **)value + 1),
+  //         *((uint64_t **)value + 2));
+  int size = str->length * 8;
+  int from = value - (uint64_t)heap;
+  mark_chunk(from - 16, size);
+  // 根据record的descriptor检查每个field
+  for (int i = 0; i < str->length; i++) {
+    // 可能是pointer
+    if (str->chars[i] == '1') {
+      // value是record的head(不包括descriptor)
+      // 向后走i步在解引用就是新的pointer的值
+      uint64_t field_i = *((uint64_t *)value + i);
+      check_pointer(field_i);
+    }
+  }
+}
+
+void DerivedHeap::check_pointer(uint64_t value) {
+  // 根据是否在范围内保守判断
+  // 因为一个frame只记录了一个metadata
+  if (value >= (uint64_t)heap && value < (uint64_t)heap + heap_size) {
+    // 判断是record还是array
+    uint64_t *p = (uint64_t *)value;
+    //        printf("descriptor_tag=%llu size=%llu\n", p[-2], p[-1]);
+    if (p[-2] == 1) {
+      // array
+      uint64_t size = p[-1];
+      // 这里的范围跟descriptor对应上就行
+      int from = value - (uint64_t)heap;
+      //          printf("from = %d  [%d,%d]\n", from, from - 16,
+      //                 from - 16 + (int)size);
+      mark_chunk(from - 16, size);
+
+    } else if (p[-2] == 2) {
+      // record 这里之前设置成tiger中的string类了
+      DFS(value);
+    }
+  }
+}
+
 void DerivedHeap::GC() {
   //  printf("come in GC!\n");
   uint64_t *sp;
@@ -115,8 +175,9 @@ void DerivedHeap::GC() {
 
   // sp + 1 代表的是加8byte
   // sp+8byte 代表的是metadata的地址 也就是char**
-  sp++;
-  std::string frame_metadata(*((char **)sp));
+  // 第一步放到do while里面 完美契合
+  //  sp++;
+  std::string frame_metadata;
   //  printf("%p %s\n", *((char **)sp), frame_metadata.c_str());
 
   // mark & sweep
@@ -125,40 +186,27 @@ void DerivedHeap::GC() {
   // sp指向调用alloc的函数的底部，比如tigermain的stack_pointer
 
   // mark
-  int length = frame_metadata.length();
-  int tiger_main_size = length * 8;
-  for (int i = 0; i < length; i++) {
-    uint64_t value = *((uint64_t *)sp + length - (i + 1));
-    if (frame_metadata[i] == '1') {
-      // 可能是pointer
-      if (value >= (uint64_t)heap && value < (uint64_t)heap + heap_size) {
-        // 判断是record还是array
-        uint64_t *p = (uint64_t *)value;
-        //        printf("descriptor_tag=%llu size=%llu\n", p[-2], p[-1]);
-        if (p[-2] == 1) {
-          // array
-          uint64_t size = p[-1];
-          // 这里的范围跟descriptor对应上就行
-          int from = value - (uint64_t)heap;
-          //          printf("from = %d  [%d,%d]\n", from, from - 16,
-          //                 from - 16 + (int)size);
-          for (int j = from - 16; j < from - 16 + size; j++) {
-            mark[j] = true;
-          }
-        } else if (p[-2] == 2) {
-          // record 这里之前设置成tiger中的string类了
-          // 放在record的指针前面8byte
-          struct string *str = *((struct string **)value - 1);
-          //          printf("%d %s\n", str->length, str->chars);
-          int size = str->length * 8;
-          int from = value - (uint64_t)heap;
-          for (int j = from - 16; j < from + size; j++) {
-            mark[j] = true;
-          }
-        }
+  bool isTigerMain;
+  int length = 0;
+  do {
+    // sp + framesize + 8(call的时候存放的return address)
+    // sp+1 走8byte，只需要走length+1步
+    // 第一次length=0，跳一步正好契合，也是跳过return address
+    sp = sp + (length + 1);
+    frame_metadata = std::string(*((char **)sp));
+    //    printf("frame_metadata=%s\n", frame_metadata.c_str());
+    isTigerMain = frame_metadata[0] == 'Y';
+    frame_metadata = frame_metadata.substr(1);
+    length = frame_metadata.length();
+    int tiger_main_size = length * 8;
+    for (int i = 0; i < length; i++) {
+      uint64_t value = *((uint64_t *)sp + length - (i + 1));
+      if (frame_metadata[i] == '1') {
+        // 可能是pointer
+        check_pointer(value);
       }
     }
-  }
+  } while (!isTigerMain);
 
   // sweep
   // 先存下所有的块 (start, size)
